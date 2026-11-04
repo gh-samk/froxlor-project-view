@@ -40,7 +40,6 @@ Bootstrap's CSS variables and follow the light and dark variants.
 - [Languages](#languages)
 - [Security model](#security-model)
 - [Design decisions](#design-decisions)
-- [Tests](#tests)
 - [Layout](#layout)
 - [Deliberately not included](#deliberately-not-included)
 - [License](#license)
@@ -356,8 +355,7 @@ brings its own small layer, `lib/Froxlor/Ext/ProjectView/Lang.php`: the
 English source text is the key (`Lang::t('Text')` in PHP,
 `{{ pv_t('Text') }}` in Twig), the German versions are in
 `lib/Froxlor/Ext/ProjectView/lang/de.php`. If a translation is missing, the
-English text appears. `tests/lang.php` reports every text without a German
-entry and placeholders that do not match. The Twig function is called
+English text appears. The Twig function is called
 `pv_t` so that it never collides with another extension's function.
 
 Froxlor's system log entries are always English.
@@ -514,55 +512,6 @@ by the browser via the `pattern` attribute.
 remains a data export instead of an excavation. Froxlor's `main` branch is a
 complete rewrite (Laravel) that this extension does not target.
 
-## Tests
-
-These run without any setup:
-
-```bash
-php tests/lang.php                   # every text has a German entry, placeholders match
-php tests/connection.php             # userdata.inc.php parsing, DSN and TLS like Froxlor
-php tests/wordpress-scanner.php      # detection, search depth, symlinks, version reading
-php tests/wordpress-integrity.php    # verify-checksums output, PHP in uploads, symlinks
-php tests/resource-suggestions.php   # path and name suggestions, including the prefix trap
-php tests/wordpress-cli.php          # privilege drop, cd as the customer, scrubbed environment, output caps
-php tests/wordpress-login.php        # strict site address parsing, rebuilt URLs, allowed hosts
-php tests/domain-tls.php             # subdomain LE, mail package, SNI files, autoconfiguration
-php tests/web-output.php             # error messages and table cells are escaped (XSS regression)
-php tests/ownership.php              # resources only within their customer, backup hook, autologin hosts (SQLite)
-```
-
-With a Froxlor directory (only its `vendor/` is used, for Twig):
-
-```bash
-php tests/templates.php /path/to/froxlor   # parse and render all templates in English and German
-```
-
-`tests/database.php` checks the real queries against Froxlor's original schema
-in a disposable database — whether column names, tenant separation and key
-figures are really right. How to set up such a database (for example in a
-throwaway MariaDB container) is described at the top of the file; it needs
-nothing but Froxlor's `install/froxlor.sql.php`, `migrations/001_init.sql`
-and `tests/seed.sql`:
-
-```bash
-php tests/database.php /path/to/froxlor
-```
-
-It checks among other things that a restricted admin only sees their own
-projects, that the standard subdomain does not show up as a project, that the
-counts of several detail tables do not multiply each other, that with several
-WordPress installations the oldest version determines the risk, and that an
-assignment cannot be removed from within a foreign project.
-
-The write actions and WordPress jobs are best tested end to end in a
-disposable Froxlor installation (for example Froxlor in a container with a
-test customer and a real WordPress): updates with backup, autologin including
-reused, manipulated and expired links, a customer who points the plugin
-directory to `/etc`, and the integrity check with a modified core file, an
-`uploads/x.php` and a plugin without checksums.
-
-`tests/` and `migrations/` are not copied into Froxlor by the installer.
-
 ## Layout
 
 ```
@@ -603,7 +552,6 @@ migrations/
   apply.php                                  applies the migrations
   remove.php                                 cron jobs, autologin plugins and mail SNI away, optionally data
   connection.php                             database connection from userdata.inc.php
-tests/                                       test scripts, see above
 ```
 
 ### Database objects
