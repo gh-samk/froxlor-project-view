@@ -1,0 +1,90 @@
+/*
+ * Project View styles.
+ *
+ * Included via a <link> from style.html.twig, with this file's modification
+ * time as a version marker. Two reasons for this approach:
+ *
+ * - Froxlor mounts Vue on <body id="app"> and thereby compiles the whole page
+ *   as a template. Vue silently discards every <style> and <script> in the
+ *   page content. A <link> survives.
+ * - Froxlor sends no Cache-Control for static files. Without a changing
+ *   address, browsers would keep the old version for days after an update.
+ *
+ * Deliberately not in templates/Froxlor/assets/css/custom.css: that is
+ * Froxlor's hook for the admin's own customisations.
+ *
+ * Colours come exclusively from Bootstrap's CSS variables (--bs-*), so the
+ * view follows Froxlor's light and dark variants on its own.
+ */
+
+/* Boxes in one row get the same height, so the grid does not fray. */
+.pv-box.h-100 > .list-group { flex: 1 1 auto; }
+
+/* Otherwise paths and database names break the layout on narrow screens. */
+.pv-box code { overflow-wrap: anywhere; }
+
+/* Flex children may shrink — otherwise long addresses push the buttons out. */
+.min-w-0 { min-width: 0; }
+
+/* Do not place the jump targets of the key-figure tiles flush with the top edge. */
+.pv-box { scroll-margin-top: 1rem; }
+
+/* Key-figure tiles: clickable, so visibly clickable. Outline instead of
+   border, because Froxlor's cards have no border (card-border-width: 0) —
+   a border-warning would stay invisible. */
+.pv-stat {
+	outline: 1px solid transparent;
+	outline-offset: -1px;
+	transition: outline-color .15s ease-out, box-shadow .15s ease-out, background-color .15s ease-out;
+}
+.pv-stat:hover { outline-color: rgba(var(--bs-primary-rgb), .55); }
+.pv-stat:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: 2px; }
+.pv-stat.border-warning { background-color: var(--bs-warning-bg-subtle); outline-color: var(--bs-warning-border-subtle); }
+.pv-stat.border-warning:hover { outline-color: var(--bs-warning); }
+
+/* Expanded edit area, clearly set apart from the entry. */
+.pv-inset { margin-top: .75rem; padding-top: .75rem; border-top: 1px solid var(--bs-border-color); }
+
+/* Sub-headings in the edit area. */
+.pv-section {
+	margin: 1.1rem 0 .4rem;
+	font-size: .75rem;
+	font-weight: 600;
+	letter-spacing: .04em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+}
+.pv-inset > .pv-section:first-child { margin-top: 0; }
+
+/* Delete area: separated from normal actions by space and colour. */
+.pv-danger {
+	margin-top: .75rem;
+	padding: .75rem;
+	border: 1px solid var(--bs-danger-border-subtle);
+	border-radius: var(--bs-border-radius);
+	background: var(--bs-danger-bg-subtle);
+}
+
+/* Typed confirmation: make it visible while the input does not match yet. */
+.pv-danger input[name="confirmation"]:not(:placeholder-shown):invalid { border-color: var(--bs-danger); }
+.pv-danger input[name="confirmation"]:valid { border-color: var(--bs-success); }
+
+/* Icon buttons with a minimum size — btn-sm alone is barely 31 px high. */
+.pv-actions .btn { min-width: 2.25rem; min-height: 2.25rem; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Log of a WordPress job: readable, but limited in height. */
+.pv-log {
+	max-height: 18rem;
+	overflow: auto;
+	margin: 0;
+	padding: .5rem .75rem;
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	background: var(--bs-tertiary-bg);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.pv-stat, .pv-box .collapsing { transition: none; }
+}

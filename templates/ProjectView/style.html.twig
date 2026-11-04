@@ -1,0 +1,7 @@
+{#
+	Includes the Project View styles. Why as a <link> to a separate file and
+	not as <style>: see the header of style.css.
+
+	style_version is set by admin_projects.php from the file's modification time.
+#}
+<link rel="stylesheet" href="{{ basehref|default('') }}templates/ProjectView/style.css?v={{ style_version|default(0) }}">

@@ -1,0 +1,182 @@
+{# Building blocks for the resource boxes of the project page. #}
+
+{# Empty state: says what is missing instead of leaving the box silently empty. #}
+{% macro empty(text) %}
+	<div class="list-group-item text-body-secondary small py-3">{{ text }}</div>
+{% endmacro %}
+
+{#
+	Note about delayed effect.
+
+	Froxlor does not write configuration changes immediately; it adds a task
+	to panel_tasks which the cron processes. Without this note people click
+	twice because nothing seems to happen.
+#}
+{% macro delayed() %}
+	<span class="badge bg-secondary-subtle text-secondary-emphasis fw-normal">
+		<i class="fa-solid fa-clock me-1" aria-hidden="true"></i>{{ pv_t('takes effect on the next cron run') }}
+	</span>
+{% endmacro %}
+
+{#
+	Header of a box. The heading is a real h6 so screen readers can jump
+	between the boxes as sections.
+#}
+{% macro header(icon, title, count, target, button_text) %}
+	<div class="card-header bg-body-tertiary d-flex justify-content-between align-items-center gap-2">
+		<h6 class="mb-0 fw-semibold d-flex align-items-center gap-2">
+			<i class="{{ icon }} text-body-secondary" aria-hidden="true"></i>{{ title }}
+			{% if count is not null %}
+				<span class="badge rounded-pill text-bg-secondary">{{ count }}</span>
+			{% endif %}
+		</h6>
+		{% if target is not empty %}
+			<button class="btn btn-sm btn-primary text-nowrap" type="button"
+			        data-bs-toggle="collapse" data-bs-target="#{{ target }}"
+			        aria-expanded="false" aria-controls="{{ target }}">
+				<i class="fa-solid fa-plus" aria-hidden="true"></i><span class="ms-1">{{ button_text }}</span>
+			</button>
+		{% endif %}
+	</div>
+{% endmacro %}
+
+{# Hidden mandatory fields of every form on the project page. #}
+{% macro form_header(csrf, project_id, action) %}
+	<input type="hidden" name="csrf_token" value="{{ csrf }}">
+	<input type="hidden" name="page" value="detail">
+	<input type="hidden" name="id" value="{{ project_id }}">
+	<input type="hidden" name="action" value="{{ action }}">
+	<input type="hidden" name="send" value="send">
+{% endmacro %}
+
+{# Sub-heading inside an expanded edit area. #}
+{% macro section(title) %}
+	<div class="pv-section">{{ title }}</div>
+{% endmacro %}
+
+{# Status badge: always icon and text, never colour alone. #}
+{% macro status(on, text) %}
+	{% if on %}
+		<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle fw-normal">
+			<i class="fa-solid fa-check me-1" aria-hidden="true"></i>{{ text }}
+		</span>
+	{% else %}
+		<span class="badge bg-body-secondary text-body-secondary border fw-normal">
+			<i class="fa-solid fa-minus me-1" aria-hidden="true"></i>{{ text }}
+		</span>
+	{% endif %}
+{% endmacro %}
+
+{# State of a mail package subdomain. Icon and text, never colour alone. #}
+{% macro mail_package_status(status, text) %}
+	{% if status == 'created' %}
+		{% set colour, icon = 'success', 'fa-check' %}
+	{% elseif status == 'planned' %}
+		{% set colour, icon = 'info', 'fa-eye' %}
+	{% elseif status == 'waiting_dns' or status == 'failed' %}
+		{% set colour, icon = 'warning', 'fa-triangle-exclamation' %}
+	{% else %}
+		{% set colour, icon = 'secondary', 'fa-minus' %}
+	{% endif %}
+	<span class="badge bg-{{ colour }}-subtle text-{{ colour }}-emphasis border border-{{ colour }}-subtle fw-normal">
+		<i class="fa-solid {{ icon }} me-1" aria-hidden="true"></i>{{ text }}
+	</span>
+{% endmacro %}
+
+{#
+	Switch inside a form. Sends "1" when on — a switch that is off sends
+	nothing, and that is exactly what admin_projects.php reads as 0.
+#}
+{% macro toggle(name, fid, on, text) %}
+	<div class="form-check form-switch">
+		<input class="form-check-input" type="checkbox" role="switch" name="{{ name }}" value="1" id="{{ fid }}" {{ on ? 'checked' }}>
+		<label class="form-check-label" for="{{ fid }}">{{ text }}</label>
+	</div>
+{% endmacro %}
+
+{#
+	Password form with a visible label.
+
+	Deliberately plain text instead of dots: an admin sets a password for
+	someone else here and has to pass it on. It is never shown again after
+	saving anyway — Froxlor stores only the hash.
+#}
+{% macro password(csrf, project_id, action, field_name, rid, name, button) %}
+	{% set fid = 'pw-' ~ action ~ '-' ~ rid %}
+	<form method="post" class="pv-form">
+		{{ _self.form_header(csrf, project_id, action) }}
+		<input type="hidden" name="{{ field_name }}" value="{{ rid }}">
+		<label class="form-label small mb-1" for="{{ fid }}">{{ pv_t('New password') }}</label>
+		<div class="d-flex gap-2 flex-wrap">
+			<input type="text" class="form-control form-control-sm flex-grow-1 w-auto" id="{{ fid }}" name="{{ name }}"
+			       autocomplete="new-password" spellcheck="false" required>
+			<button type="submit" class="btn btn-sm btn-primary text-nowrap">{{ button|default(pv_t('Set password')) }}</button>
+		</div>
+	</form>
+{% endmacro %}
+
+{#
+	Delete area with typed confirmation.
+
+	Without JavaScript: Froxlor's Vue discards every <script> in the page
+	content. The pattern attribute makes the browser refuse to submit until
+	the name has been typed exactly. That is only a convenience —
+	admin_projects.php checks the input again against the name from the
+	database.
+
+	The pattern is a regular expression. Dots, plus signs and friends are
+	therefore escaped; "-", "_" and "@" deliberately not, because a needless
+	escape is itself a syntax error in the browsers' Unicode mode.
+#}
+{% macro delete_zone(csrf, project_id, action, field_name, rid, confirmation, title, note, files_label) %}
+	{% set fid = 'del-' ~ action ~ '-' ~ rid %}
+	{% set pattern = confirmation|replace({'\\': '\\\\', '.': '\\.', '+': '\\+', '*': '\\*', '?': '\\?', '(': '\\(', ')': '\\)', '[': '\\[', ']': '\\]', '{': '\\{', '}': '\\}', '|': '\\|', '^': '\\^', '$': '\\$', '/': '\\/'}) %}
+	<div class="pv-danger">
+		<div class="fw-semibold text-danger-emphasis small mb-1">
+			<i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>{{ title }}
+		</div>
+		<p class="small text-body-secondary mb-2">{{ note }}</p>
+		<form method="post" class="pv-form">
+			{{ _self.form_header(csrf, project_id, action) }}
+			<input type="hidden" name="{{ field_name }}" value="{{ rid }}">
+			{% if files_label %}
+				<div class="form-check mb-2">
+					<input class="form-check-input" type="checkbox" name="delete_userfiles" value="1" id="{{ fid }}-files">
+					<label class="form-check-label small" for="{{ fid }}-files">{{ files_label }}</label>
+				</div>
+			{% endif %}
+			<label class="form-label small mb-1" for="{{ fid }}">
+				{{ pv_t('To confirm, type %s', '<strong class="user-select-all">' ~ confirmation|e ~ '</strong>')|raw }}
+			</label>
+			<div class="d-flex gap-2 flex-wrap">
+				<input type="text" class="form-control form-control-sm flex-grow-1 w-auto" id="{{ fid }}" name="confirmation"
+				       autocomplete="off" spellcheck="false" required placeholder=" "
+				       pattern="{{ pattern }}" title="{{ pv_t('Please type exactly %s', confirmation) }}">
+				<button type="submit" class="btn btn-sm btn-danger text-nowrap">{{ pv_t('Delete permanently') }}</button>
+			</div>
+		</form>
+	</div>
+{% endmacro %}
+
+{# An entry in the WordPress maintenance menu: one small POST form per job. #}
+{% macro wp_job(csrf, project_id, install_id, type, text, icon) %}
+	<li>
+		<form method="post">
+			{{ _self.form_header(csrf, project_id, 'wp_job') }}
+			<input type="hidden" name="installid" value="{{ install_id }}">
+			<input type="hidden" name="type" value="{{ type }}">
+			<button type="submit" class="dropdown-item"><i class="{{ icon }} fa-fw me-2" aria-hidden="true"></i>{{ text }}</button>
+		</form>
+	</li>
+{% endmacro %}
+
+{# State of a WordPress job — icon and text, never colour alone. #}
+{% macro job_status(status) %}
+	{% set s = {
+		'queued': ['bg-secondary-subtle text-secondary-emphasis border-secondary-subtle', 'fa-clock', pv_t('waiting')],
+		'running': ['bg-info-subtle text-info-emphasis border-info-subtle', 'fa-gear', pv_t('running')],
+		'done': ['bg-success-subtle text-success-emphasis border-success-subtle', 'fa-check', pv_t('done')],
+		'failed': ['bg-danger-subtle text-danger-emphasis border-danger-subtle', 'fa-xmark', pv_t('Error')]
+	}[status]|default(['bg-body-secondary text-body-secondary', 'fa-question', status]) %}
+	<span class="badge border fw-normal {{ s[0] }}"><i class="fa-solid {{ s[1] }} me-1" aria-hidden="true"></i>{{ s[2] }}</span>
+{% endmacro %}

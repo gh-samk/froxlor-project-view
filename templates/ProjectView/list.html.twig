@@ -1,0 +1,41 @@
+{# Project overview. Extends Froxlor's base layout: the Twig loader is rooted
+   in templates/, so "Froxlor/..." resolves from this directory as well. #}
+{% extends "Froxlor/userarea.html.twig" %}
+
+{% block heading %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	<h5 class="mb-1">
+		<i class="fa-solid fa-diagram-project me-1"></i>
+		{{ pv_t('Projects') }}
+		{% if listing.table.tr|length > 0 %}
+			<small><span class="badge rounded-pill bg-secondary">{{ listing.table.tr|length }}</span></small>
+		{% endif %}
+	</h5>
+	<span class="text-body-secondary mt-2">{{ pv_t('A project is a main domain with everything attached to it.') }}</span>
+</div>
+{% endblock %}
+
+{% block actions %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	<a class="btn {% if unassigned_count > 0 %}btn-warning{% else %}btn-outline-secondary{% endif %}"
+	   href="{{ linker({'section': 'projects', 'page': 'unassigned'}) }}">
+		<i class="fa-solid fa-link-slash"></i>
+		<span class="d-none d-lg-inline ms-lg-1">{{ pv_t('Unassigned') }}</span>
+		{% if unassigned_count > 0 %}
+			<span class="badge rounded-pill bg-dark ms-1">{{ unassigned_count }}</span>
+		{% endif %}
+	</a>
+</div>
+{% endblock %}
+
+{% block content %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	{% include "ProjectView/style.html.twig" %}
+	{% import "Froxlor/table/table.html.twig" as table %}
+
+	{{ table.table(listing) }}
+</div>
+{% endblock %}

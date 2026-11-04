@@ -1,0 +1,124 @@
+{% extends "Froxlor/userarea.html.twig" %}
+
+{% macro assignment(entry, type, csrf) %}
+	<div class="list-group-item">
+		<div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+			<div>
+				<code>{{ type == 'database' ? entry.databasename : entry.username }}</code>
+				<div class="small text-body-secondary">
+					{{ entry.customer_label }}
+					{% if type == 'ftp' %} · {{ entry.homedir }}{% endif %}
+					{% if entry.description %} · {{ entry.description }}{% endif %}
+				</div>
+			</div>
+
+			<form method="post" class="d-flex align-items-center gap-2 ms-auto">
+				<input type="hidden" name="csrf_token" value="{{ csrf }}">
+				<input type="hidden" name="page" value="unassigned">
+				<input type="hidden" name="action" value="assign">
+				<input type="hidden" name="send" value="send">
+				<input type="hidden" name="resource_type" value="{{ type }}">
+				<input type="hidden" name="resource_id" value="{{ entry.id }}">
+
+				{% if entry.domains|length > 0 %}
+					<select class="form-select form-select-sm" name="domainid" style="min-width:16rem" required>
+						<option value="">{{ pv_t('Choose project …') }}</option>
+						{% for d in entry.domains %}
+							{# The best suggestion is preselected, but confirming is always
+							   manual — nobody ever questions a guessed assignment that
+							   saved itself. #}
+							<option value="{{ d.id }}"
+								{% if entry.suggestions|length > 0 and entry.suggestions[0].id == d.id %}selected{% endif %}>
+								{{ d.domain_ace ?: d.domain }}
+								{% if entry.suggestions|length > 0 and entry.suggestions[0].id == d.id %} — {{ pv_t('Suggestion') }}{% endif %}
+							</option>
+						{% endfor %}
+					</select>
+					<button type="submit" class="btn btn-sm btn-primary text-nowrap">{{ pv_t('Assign') }}</button>
+				{% else %}
+					<span class="small text-body-secondary fst-italic">
+						{{ pv_t('This customer has no main domain — nothing it could belong to.') }}
+					</span>
+				{% endif %}
+			</form>
+		</div>
+
+		{% if entry.suggestions|length > 0 %}
+			<div class="small text-body-secondary mt-2">
+				<i class="fa-solid fa-lightbulb me-1"></i>
+				{% if type == 'ftp' %}
+					{{ pv_t('Suggestion based on the path: the account is located below the document root of') }}
+					<strong>{{ entry.suggestions[0].domain_ace ?: entry.suggestions[0].domain }}</strong>.
+				{% else %}
+					{{ pv_t('Suggestion based on the name — a weak hint, please check. Froxlor does not link databases to any domain.') }}
+				{% endif %}
+			</div>
+		{% endif %}
+	</div>
+{% endmacro %}
+
+{% block heading %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	<h5 class="mb-1">
+		<i class="fa-solid fa-link-slash me-1"></i>{{ pv_t('Unassigned') }}
+		<small><span class="badge rounded-pill bg-secondary">{{ databases|length + ftps|length }}</span></small>
+	</h5>
+	<span class="text-body-secondary mt-2">
+		{{ pv_t('Resources that do not belong to any project.') }}
+	</span>
+</div>
+{% endblock %}
+
+{% block actions %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	<a class="btn btn-outline-secondary" href="{{ linker({'section': 'projects', 'page': 'overview'}) }}">
+		<i class="fa-solid fa-reply"></i>
+		<span class="d-none d-lg-inline ms-lg-1">{{ pv_t('All projects') }}</span>
+	</a>
+</div>
+{% endblock %}
+
+{% block content %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	{% include "ProjectView/style.html.twig" %}
+	<div class="alert alert-info" role="alert">
+		<i class="fa-solid fa-circle-info me-1"></i>
+		{{ pv_t('For databases and FTP accounts, Froxlor only stores the customer, not the domain. This assignment is therefore made here. It is normal for the list never to be completely empty: test databases, shared accounts and legacy items belong to no project — and are not meant to.') }}
+	</div>
+
+	<div class="card mb-4">
+		<div class="card-header bg-body-tertiary fw-semibold">
+			<i class="fa-solid fa-database me-2 text-body-secondary"></i>{{ pv_t('Databases') }}
+			<span class="badge rounded-pill bg-secondary ms-1">{{ databases|length }}</span>
+		</div>
+		<div class="list-group list-group-flush">
+			{% for db in databases %}
+				{{ _self.assignment(db, 'database', csrf_token) }}
+			{% else %}
+				<div class="list-group-item text-body-secondary small py-3">
+					{{ pv_t('All databases are assigned to a project.') }}
+				</div>
+			{% endfor %}
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="card-header bg-body-tertiary fw-semibold">
+			<i class="fa-solid fa-folder-tree me-2 text-body-secondary"></i>{{ pv_t('FTP accounts') }}
+			<span class="badge rounded-pill bg-secondary ms-1">{{ ftps|length }}</span>
+		</div>
+		<div class="list-group list-group-flush">
+			{% for ftp in ftps %}
+				{{ _self.assignment(ftp, 'ftp', csrf_token) }}
+			{% else %}
+				<div class="list-group-item text-body-secondary small py-3">
+					{{ pv_t('All FTP accounts are assigned to a project.') }}
+				</div>
+			{% endfor %}
+		</div>
+	</div>
+</div>
+{% endblock %}

@@ -1,0 +1,991 @@
+{% extends "Froxlor/userarea.html.twig" %}
+{% import "ProjectView/box.html.twig" as k %}
+
+{% set project_name = project.domain_ace ?: project.domain %}
+{% set as_customer = {'section': 'customers', 'page': 'customers', 'action': 'su', 'id': project.customerid} %}
+
+{% block heading %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	<nav aria-label="{{ pv_t('Breadcrumb') }}">
+		<ol class="breadcrumb small mb-1">
+			<li class="breadcrumb-item"><a href="{{ linker({'section': 'projects', 'page': 'overview'}) }}">{{ pv_t('Projects') }}</a></li>
+			<li class="breadcrumb-item active" aria-current="page">{{ project_name }}</li>
+		</ol>
+	</nav>
+	<h5 class="mb-1 d-flex align-items-center flex-wrap gap-2">
+		<i class="fa-solid fa-diagram-project" aria-hidden="true"></i>{{ project_name }}
+		{% if project.deactivated %}<span class="badge text-bg-secondary">{{ pv_t('deactivated') }}</span>{% endif %}
+	</h5>
+	<span class="text-body-secondary">{{ project.customer_label }} · {{ project.loginname }}</span>
+</div>
+{% endblock %}
+
+{% block actions %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	<div class="d-flex flex-wrap gap-2 justify-content-end">
+		<a class="btn btn-outline-secondary" href="{{ project.ssl_enabled ? 'https' : 'http' }}://{{ project_name }}" target="_blank" rel="noopener">
+			<i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i><span class="d-none d-lg-inline ms-1">Website</span>
+		</a>
+		<div class="dropdown">
+			<button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+				<i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i><span class="d-none d-lg-inline ms-1">{{ pv_t('Open as customer') }}</span>
+			</button>
+			<ul class="dropdown-menu dropdown-menu-end">
+				<li><h6 class="dropdown-header">{{ pv_t('In the customer area of %s', project.loginname) }}</h6></li>
+				<li><a class="dropdown-item" href="{{ linker(as_customer|merge({'target': 'index'})) }}"><i class="fa-solid fa-gauge fa-fw me-2" aria-hidden="true"></i>{{ pv_t('Overview') }}</a></li>
+				<li><a class="dropdown-item" href="{{ linker(as_customer|merge({'target': 'domains'})) }}"><i class="fa-solid fa-globe fa-fw me-2" aria-hidden="true"></i>Domains</a></li>
+				<li><a class="dropdown-item" href="{{ linker(as_customer|merge({'target': 'email'})) }}"><i class="fa-solid fa-envelope fa-fw me-2" aria-hidden="true"></i>{{ pv_t('Email') }}</a></li>
+				<li><a class="dropdown-item" href="{{ linker(as_customer|merge({'target': 'mysql'})) }}"><i class="fa-solid fa-database fa-fw me-2" aria-hidden="true"></i>{{ pv_t('Databases') }}</a></li>
+				<li><a class="dropdown-item" href="{{ linker(as_customer|merge({'target': 'ftp'})) }}"><i class="fa-solid fa-folder-tree fa-fw me-2" aria-hidden="true"></i>FTP</a></li>
+				<li><hr class="dropdown-divider"></li>
+				<li><span class="dropdown-item-text small text-body-secondary">{{ pv_t('Return to the project via the menu on the left.') }}</span></li>
+			</ul>
+		</div>
+	</div>
+</div>
+{% endblock %}
+
+{% block content %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	{% include "ProjectView/style.html.twig" %}
+
+	{% if flash %}
+		<div class="alert alert-{{ flash.type == 'success' ? 'success' : 'warning' }} alert-dismissible fade show d-flex align-items-center gap-2" role="status">
+			<i class="fa-solid {{ flash.type == 'success' ? 'fa-circle-check' : 'fa-circle-info' }}" aria-hidden="true"></i>
+			<div>{{ flash.text }}</div>
+			<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{{ pv_t('Close message') }}"></button>
+		</div>
+	{% endif %}
+
+	{# ----------------------------------------------------------------- #}
+	{# Key figures: overview at a glance, every tile jumps to its box #}
+	<div class="row row-cols-2 row-cols-md-3 row-cols-xxl-6 g-3 mb-4">
+		{% set wp_status = stats.wp_count == 0 ? '—' : (stats.wp_version ?: '?') %}
+		{% set wp_suspicious = wordpress|filter(w => w.integrity_findings > 0)|length > 0 %}
+		{% for tile in [
+			{'target': 'box-domain', 'icon': 'fa-solid fa-lock', 'title': 'SSL', 'value': project.ssl_enabled ? pv_t('active') : pv_t('off'), 'warn': not project.ssl_enabled, 'extra': project.letsencrypt ? 'Let\'s Encrypt' : pv_t('no certificate')},
+			{'target': 'box-wordpress', 'icon': 'fa-brands fa-wordpress', 'title': 'WordPress', 'value': wp_status, 'warn': stats.wp_outdated or wp_suspicious, 'extra': stats.wp_count == 0 ? pv_t('not found') : (wp_suspicious ? pv_t('Suspicious files') : (stats.wp_outdated ? pv_t('outdated') : pv_t('up to date')))},
+			{'target': 'box-subdomains', 'icon': 'fa-solid fa-sitemap', 'title': 'Subdomains', 'value': subdomains|length, 'warn': false, 'extra': ''},
+			{'target': 'box-email', 'icon': 'fa-solid fa-envelope', 'title': pv_t('Email'), 'value': emails|length, 'warn': false, 'extra': ''},
+			{'target': 'box-databases', 'icon': 'fa-solid fa-database', 'title': pv_t('Databases'), 'value': databases|length, 'warn': false, 'extra': ''},
+			{'target': 'box-ftp', 'icon': 'fa-solid fa-folder-tree', 'title': 'FTP', 'value': ftps|length, 'warn': false, 'extra': ''}
+		] %}
+			<div class="col">
+				<a class="card h-100 pv-stat text-decoration-none {{ tile.warn ? 'border-warning' }}" href="#{{ tile.target }}">
+					<div class="card-body py-3">
+						<div class="small text-body-secondary d-flex align-items-center gap-2">
+							<i class="{{ tile.icon }}" aria-hidden="true"></i>{{ tile.title }}
+						</div>
+						<div class="fs-5 fw-semibold text-body mt-1">{{ tile.value }}</div>
+						{% if tile.extra %}
+							<div class="small {{ tile.warn ? 'text-warning-emphasis' : 'text-body-secondary' }}">
+								{% if tile.warn %}<i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>{% endif %}{{ tile.extra }}
+							</div>
+						{% endif %}
+					</div>
+				</a>
+			</div>
+		{% endfor %}
+	</div>
+
+	<div class="row g-4">
+
+		{# ------------------------------------------------------------- #}
+		{# Domain #}
+		<div class="col-12 col-xl-6">
+			<section class="card h-100 pv-box" id="box-domain">
+				{{ k.header('fa-solid fa-globe', 'Domain', null, '', '') }}
+				<div class="list-group list-group-flush">
+
+					<div class="list-group-item">
+						<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+							<div class="min-w-0">
+								<div class="small text-body-secondary">{{ project.is_redirect ? pv_t('Redirect') : pv_t('Document root') }}</div>
+								<code class="small">{{ project.documentroot }}</code>
+								{% if storage and storage.computed_at > 0 %}
+									<div class="small text-body-secondary mt-1">
+										<i class="fa-solid fa-hard-drive me-1" aria-hidden="true"></i>
+										<span title="{{ pv_t('Files and databases, calculated %s', storage.computed_at|date('d.m.Y')) }}">
+											{{ pv_t('%s used', storage.total_readable) }}
+											<span class="opacity-75">{{ pv_t('(%1$s files, %2$s databases)', storage.files_readable, storage.db_readable) }}</span>
+										</span>
+									</div>
+								{% endif %}
+							</div>
+							<div class="d-flex gap-1 flex-wrap pv-actions">
+								{% if opt.webftp_url %}
+									<a class="btn btn-sm btn-outline-secondary text-nowrap" href="{{ opt.webftp_url }}" target="_blank" rel="noopener noreferrer"
+									   title="{{ pv_t('Open file manager in a new tab') }}">
+										<i class="fa-solid fa-folder-open" aria-hidden="true"></i><span class="ms-1">{{ pv_t('File manager') }}</span>
+									</a>
+								{% endif %}
+								<button class="btn btn-sm btn-outline-secondary text-nowrap" type="button"
+								        data-bs-toggle="collapse" data-bs-target="#docroot-edit" aria-expanded="false" aria-controls="docroot-edit">
+									<i class="fa-solid fa-pen" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Edit') }}</span>
+								</button>
+							</div>
+						</div>
+						<div class="collapse" id="docroot-edit">
+							{% if project.docroot_rest is not null %}
+								<form method="post" class="pv-form pv-inset">
+									{{ k.form_header(csrf_token, project.id, 'domain_docroot') }}
+									<label class="form-label small mb-1" for="docroot-field">{{ pv_t('New document root') }}</label>
+									<div class="d-flex gap-2 flex-wrap">
+										<div class="input-group input-group-sm flex-grow-1 w-auto">
+											{# The customer directory is fixed: this guarantees the path stays
+											   inside the customer's directory, and relative and absolute
+											   cannot be confused. #}
+											<span class="input-group-text font-monospace">{{ project.customer_docroot|trim('/', 'right') }}/</span>
+											<input type="text" class="form-control font-monospace" id="docroot-field"
+											       name="documentroot" value="{{ project.docroot_rest }}" spellcheck="false"
+											       aria-describedby="docroot-help">
+										</div>
+										<button type="submit" class="btn btn-sm btn-primary">{{ pv_t('Save') }}</button>
+									</div>
+									<div class="form-text" id="docroot-help">
+										{{ pv_t('A path outside the customer directory can be set under “All domain settings”.') }}
+										{{ k.delayed() }}
+									</div>
+								</form>
+							{% else %}
+								<div class="pv-inset small text-body-secondary">
+									<i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>
+									{{ pv_t('This path is outside the customer directory or is a redirect.') }}
+									{{ pv_t('You can change it under') }}
+									<a href="{{ linker({'section': 'domains', 'page': 'domains', 'action': 'edit', 'id': project.id}) }}">{{ pv_t('All domain settings') }}</a>.
+								</div>
+							{% endif %}
+						</div>
+					</div>
+
+					<div class="list-group-item">
+						<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+							<div>
+								<div class="small text-body-secondary mb-1">{{ pv_t('SSL and certificate') }}</div>
+								<div class="d-flex flex-wrap gap-1">
+									{{ k.status(project.ssl_enabled, 'SSL') }}
+									{{ k.status(project.letsencrypt, 'Let\'s Encrypt') }}
+									{{ k.status(project.ssl_redirect, project.ssl_redirect == 2 ? pv_t('HTTPS redirect once a certificate is available') : pv_t('HTTPS redirect')) }}
+									{{ k.status(project.http2, 'HTTP/2') }}
+									{{ k.status(project.hsts > 0, 'HSTS') }}
+								</div>
+								{% if opt.use_ssl and project.iswildcarddomain and not project.letsencrypt %}
+									<div class="small text-body-secondary mt-1">
+										<i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>
+										{{ pv_t('Let\'s Encrypt needs the server alias www or none — change it under “Edit”.') }}
+									</div>
+								{% endif %}
+							</div>
+							{% if opt.use_ssl %}
+								<div class="d-flex gap-2 flex-wrap">
+									{% if not project.iswildcarddomain %}
+									<form method="post" class="pv-form">
+										{{ k.form_header(csrf_token, project.id, 'ssl_toggle') }}
+										<button type="submit" class="btn btn-sm {{ project.letsencrypt ? 'btn-outline-secondary' : 'btn-outline-success' }} text-nowrap">
+											<i class="fa-solid {{ project.letsencrypt ? 'fa-lock-open' : 'fa-lock' }}" aria-hidden="true"></i>
+											<span class="ms-1">{{ project.letsencrypt ? pv_t('Let\'s Encrypt off') : pv_t('Let\'s Encrypt on') }}</span>
+										</button>
+									</form>
+									{% endif %}
+									<button class="btn btn-sm btn-outline-secondary text-nowrap" type="button"
+									        data-bs-toggle="collapse" data-bs-target="#ssl-edit" aria-expanded="false" aria-controls="ssl-edit">
+										<i class="fa-solid fa-sliders" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Edit') }}</span>
+									</button>
+								</div>
+							{% endif %}
+						</div>
+						{% if opt.use_ssl %}
+							<div class="collapse" id="ssl-edit">
+								<form method="post" class="pv-form pv-inset">
+									{{ k.form_header(csrf_token, project.id, 'domain_ssl') }}
+									<div class="row g-2">
+										<div class="col-sm-6">
+											{{ k.toggle('sslenabled', 'ssl-on', project.ssl_enabled, pv_t('SSL enabled')) }}
+											{{ k.toggle('letsencrypt', 'ssl-le', project.letsencrypt, pv_t('Let\'s Encrypt certificate')) }}
+											{{ k.toggle('ssl_redirect', 'ssl-redirect', project.ssl_redirect, pv_t('Redirect HTTP to HTTPS')) }}
+											{{ k.toggle('http2', 'ssl-http2', project.http2, 'HTTP/2') }}
+										</div>
+										<div class="col-sm-6">
+											<label class="form-label small mb-1" for="ssl-hsts">{{ pv_t('HSTS duration in seconds') }}</label>
+											<input type="number" min="0" step="1" class="form-control form-control-sm" id="ssl-hsts"
+											       name="hsts_maxage" value="{{ project.hsts|default(0) }}" aria-describedby="ssl-hsts-help">
+											<div class="form-text" id="ssl-hsts-help">{{ pv_t('0 turns HSTS off. One year is 31536000.') }}</div>
+										<label class="form-label small mb-1 mt-2" for="ssl-alias">{{ pv_t('Server alias') }}</label>
+										<select class="form-select form-select-sm" id="ssl-alias" name="selectserveralias" aria-describedby="ssl-alias-help">
+											<option value="0" {{ project.iswildcarddomain ? 'selected' }}>{{ pv_t('Wildcard (*.%s)', project_name) }}</option>
+											<option value="1" {{ not project.iswildcarddomain and project.wwwserveralias ? 'selected' }}>www.{{ project_name }}</option>
+											<option value="2" {{ not project.iswildcarddomain and not project.wwwserveralias ? 'selected' }}>{{ pv_t('No alias') }}</option>
+										</select>
+										<div class="form-text" id="ssl-alias-help">{{ pv_t('Let\'s Encrypt does not work with a wildcard alias in Froxlor.') }}</div>
+										</div>
+									</div>
+									<div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+										<button type="submit" class="btn btn-sm btn-primary">{{ pv_t('Save') }}</button>
+										{{ k.delayed() }}
+									</div>
+								</form>
+							</div>
+						{% else %}
+							<div class="small text-body-secondary mt-2">
+								<i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>
+								{{ pv_t('SSL is turned off system-wide. You can only use Let\'s Encrypt once SSL is enabled under %s.', '<a href="' ~ linker({'section': 'settings', 'page': 'overview'})|e('html_attr') ~ '">' ~ pv_t('Settings')|e ~ '</a>')|raw }}
+							</div>
+						{% endif %}
+					</div>
+
+					<div class="list-group-item small d-flex flex-wrap gap-3">
+						{# Froxlor's own domain form: special cases such as PHP
+						   configuration, IP addresses and custom vhost settings live there. #}
+						<a href="{{ linker({'section': 'domains', 'page': 'domains', 'action': 'edit', 'id': project.id}) }}">
+							<i class="fa-solid fa-sliders me-1" aria-hidden="true"></i>{{ pv_t('All domain settings') }}
+						</a>
+						<a href="{{ linker(as_customer|merge({'target': 'domains'})) }}">
+							<i class="fa-solid fa-right-to-bracket me-1" aria-hidden="true"></i>{{ pv_t('In the customer area') }}
+						</a>
+					</div>
+				</div>
+			</section>
+		</div>
+
+		{# ------------------------------------------------------------- #}
+		{# WordPress #}
+		<div class="col-12 col-xl-6">
+			<section class="card h-100 pv-box" id="box-wordpress">
+				{{ k.header('fa-brands fa-wordpress', 'WordPress', wordpress|length ?: null, '', '') }}
+				<div class="list-group list-group-flush">
+					{% if wordpress|length > 0 and not opt.wpcli %}
+						<div class="list-group-item small bg-warning-subtle text-warning-emphasis">
+							<i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>
+							{{ pv_t('WP-CLI was not found. Autologin and updates need it — enter its path under %s.', '<a href="' ~ linker({'section': 'settings', 'page': 'overview'})|e('html_attr') ~ '">' ~ pv_t('Settings › Project View')|e ~ '</a>')|raw }}
+						</div>
+					{% endif %}
+					{% for wp in wordpress %}
+						{% set wpurl = wp.siteurl ?: ((project.ssl_enabled ? 'https' : 'http') ~ '://' ~ project_name) %}
+						<div class="list-group-item">
+							<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+								<div class="min-w-0">
+									{% if wp.version %}
+										{% if wp.outdated %}
+											<span class="badge text-bg-danger"><i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>{{ wp.version }}</span>
+											<span class="small text-danger-emphasis ms-1">{{ pv_t('outdated, latest is %s', wp.latest) }}</span>
+										{% else %}
+											<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle"><i class="fa-solid fa-check me-1" aria-hidden="true"></i>{{ wp.version }}</span>
+											{% if wp.latest %}<span class="small text-body-secondary ms-1">{{ pv_t('up to date') }}</span>{% endif %}
+										{% endif %}
+									{% else %}
+										<span class="badge text-bg-secondary">{{ pv_t('Version unknown') }}</span>
+									{% endif %}
+									<div class="small text-body-secondary mt-1 text-break"><code>{{ wp.path }}</code></div>
+									{% if wp.checked_at %}
+										<div class="d-flex flex-wrap align-items-center gap-1 mt-2">
+											{% if wp.update_core %}
+												<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-normal">
+													<i class="fa-solid fa-arrow-up me-1" aria-hidden="true"></i>{{ pv_t('Core %s', wp.update_core) }}
+												</span>
+											{% endif %}
+											{% for kind, count in {'Plugin': wp.update_plugins, 'Theme': wp.update_themes} %}
+												{% set update_text = kind == 'Plugin' ? (count == 1 ? pv_t('%d plugin update', count) : pv_t('%d plugin updates', count)) : (count == 1 ? pv_t('%d theme update', count) : pv_t('%d theme updates', count)) %}
+												<span class="badge fw-normal border {{ count > 0 ? 'bg-warning-subtle text-warning-emphasis border-warning-subtle' : 'bg-body-secondary text-body-secondary' }}">
+													{% if count > 0 %}<i class="fa-solid fa-arrow-up me-1" aria-hidden="true"></i>{% endif %}{{ update_text }}
+												</span>
+											{% endfor %}
+											<span class="small text-body-secondary">{{ pv_t('checked %s', wp.checked_at|date('d.m.Y, H:i')) }}</span>
+										</div>
+									{% else %}
+										<div class="small text-body-secondary mt-2">{{ pv_t('Not checked yet.') }}</div>
+									{% endif %}
+									{% if wp.integrity_checked_at %}
+										{% set ig = wp.integrity_details %}
+										{% if wp.integrity_findings > 0 %}
+											{% set findings = [] %}
+											{% if wp.integrity_uploads %}{% set findings = findings|merge([wp.integrity_uploads == 1 ? pv_t('%d PHP file in uploads', wp.integrity_uploads) : pv_t('%d PHP files in uploads', wp.integrity_uploads)]) %}{% endif %}
+											{% if wp.integrity_modified %}{% set findings = findings|merge([pv_t('%d modified', wp.integrity_modified)]) %}{% endif %}
+											{% if wp.integrity_added %}{% set findings = findings|merge([pv_t('%d added', wp.integrity_added)]) %}{% endif %}
+											{% if wp.integrity_missing %}{% set findings = findings|merge([wp.integrity_missing == 1 ? pv_t('%d file missing', wp.integrity_missing) : pv_t('%d files missing', wp.integrity_missing)]) %}{% endif %}
+											<div class="small bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded px-2 py-1 mt-2">
+												<i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i><span class="fw-medium">{{ pv_t('Suspicious files:') }}</span>
+												{{ findings|join(' · ') }}
+												<button class="btn btn-link btn-sm p-0 align-baseline ms-1" type="button" data-bs-toggle="collapse"
+												        data-bs-target="#integrity-{{ wp.id }}" aria-expanded="false" aria-controls="integrity-{{ wp.id }}">{{ pv_t('Files') }}</button>
+												<div class="collapse" id="integrity-{{ wp.id }}">
+													<ul class="list-unstyled mb-0 mt-1">
+														{% for e in ig.paths|default([]) %}
+															<li class="text-break">
+																<span class="fw-medium">{{ {'uploads': pv_t('PHP in uploads'), 'modified': pv_t('modified'), 'added': pv_t('added'), 'missing': pv_t('missing')}[e.kind]|default(e.kind) }}</span>
+																<code>{{ e.path }}</code>
+															</li>
+														{% endfor %}
+													</ul>
+													{% if ig.paths_total|default(0) > ig.paths|default([])|length %}
+														<div class="mt-1">{{ pv_t('… and %1$d more — the complete list via %2$s and %3$s.', ig.paths_total - ig.paths|length, '<code>wp core verify-checksums</code>', '<code>wp plugin verify-checksums --all</code>')|raw }}</div>
+													{% endif %}
+												</div>
+											</div>
+										{% else %}
+											{% set checked = ig.core_note|default(null) is null ? [pv_t('Core')] : [] %}
+											{% if ig.plugins_note|default(null) is null and ig.plugins_checked|default(0) > 0 %}
+												{% set checked = checked|merge([ig.plugins_checked == 1 ? pv_t('%d plugin', ig.plugins_checked) : pv_t('%d plugins', ig.plugins_checked)]) %}
+											{% endif %}
+											<div class="small text-body-secondary mt-1">
+												<i class="fa-solid fa-shield-halved me-1" aria-hidden="true"></i>{{ pv_t('Files clean (%s)', checked|merge(['uploads'])|join(', ')) }}
+											</div>
+										{% endif %}
+										{% set unverifiable = ig.plugins_unverifiable|default([]) %}
+										{% if ig.core_note|default(null) %}{% set unverifiable = [pv_t('Core') ~ ' (' ~ ig.core_note ~ ')']|merge(unverifiable) %}{% endif %}
+										{% if ig.plugins_note|default(null) %}{% set unverifiable = unverifiable|merge(['Plugins (' ~ ig.plugins_note ~ ')']) %}{% endif %}
+										{% if unverifiable|length > 0 %}
+											<div class="small text-body-secondary mt-1 text-break" title="{{ pv_t('wordpress.org has no checksums for premium and custom plugins. That is not a finding.') }}">
+												<i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>{{ pv_t('Not verifiable: %s', unverifiable|join(', ')) }}
+											</div>
+										{% endif %}
+										{% if ig.uploads_note|default(null) %}
+											<div class="small text-body-secondary mt-1"><i class="fa-solid fa-circle-info me-1" aria-hidden="true"></i>{{ ig.uploads_note }}</div>
+										{% endif %}
+									{% endif %}
+								</div>
+
+								<div class="d-flex gap-1 flex-wrap pv-actions">
+									{% if wp.login_installed and wp.admin_users|length > 0 %}
+										<div class="dropdown">
+											<button class="btn btn-sm btn-primary dropdown-toggle text-nowrap" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+												<i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Log in') }}</span>
+											</button>
+											<ul class="dropdown-menu dropdown-menu-end">
+												<li><h6 class="dropdown-header">{{ pv_t('One-time login as') }}</h6></li>
+												{% for user in wp.admin_users %}
+													<li>
+														{# target=_blank: WordPress opens in a new tab, the project page
+														   stays. rel=noopener: the opened customer site gets no access
+														   to this window and no referrer. #}
+														<form method="post" target="_blank" rel="noopener noreferrer">
+															{{ k.form_header(csrf_token, project.id, 'wp_login') }}
+															<input type="hidden" name="installid" value="{{ wp.id }}">
+															<input type="hidden" name="user" value="{{ user }}">
+															<button type="submit" class="dropdown-item"><i class="fa-solid fa-user-shield fa-fw me-2" aria-hidden="true"></i>{{ user }}</button>
+														</form>
+													</li>
+												{% endfor %}
+												<li><hr class="dropdown-divider"></li>
+												{{ k.wp_job(csrf_token, project.id, wp.id, 'login_remove', pv_t('Remove autologin'), 'fa-solid fa-link-slash') }}
+											</ul>
+										</div>
+									{% else %}
+										<form method="post">
+											{{ k.form_header(csrf_token, project.id, 'wp_job') }}
+											<input type="hidden" name="installid" value="{{ wp.id }}">
+											<input type="hidden" name="type" value="login_install">
+											<button type="submit" class="btn btn-sm btn-outline-primary text-nowrap"
+											        title="{{ pv_t('Adds a small plugin for the one-time login to the installation (once)') }}">
+												<i class="fa-solid fa-key" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Set up autologin') }}</span>
+											</button>
+										</form>
+									{% endif %}
+
+									<div class="dropdown">
+										<button class="btn btn-sm btn-outline-secondary dropdown-toggle text-nowrap" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+											<i class="fa-solid fa-screwdriver-wrench" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Maintenance') }}</span>
+										</button>
+										<ul class="dropdown-menu dropdown-menu-end">
+											<li><h6 class="dropdown-header">{{ pv_t('A backup is made before every update') }}</h6></li>
+											{{ k.wp_job(csrf_token, project.id, wp.id, 'update_all', pv_t('Update everything'), 'fa-solid fa-arrows-rotate') }}
+											{{ k.wp_job(csrf_token, project.id, wp.id, 'update_core', pv_t('WordPress core only'), 'fa-brands fa-wordpress') }}
+											{{ k.wp_job(csrf_token, project.id, wp.id, 'update_plugins', pv_t('Plugins only'), 'fa-solid fa-plug') }}
+											{{ k.wp_job(csrf_token, project.id, wp.id, 'update_themes', pv_t('Themes only'), 'fa-solid fa-palette') }}
+											<li><hr class="dropdown-divider"></li>
+											{{ k.wp_job(csrf_token, project.id, wp.id, 'check', pv_t('Check now'), 'fa-solid fa-magnifying-glass') }}
+											{{ k.wp_job(csrf_token, project.id, wp.id, 'backup', pv_t('Back up only'), 'fa-solid fa-box-archive') }}
+										</ul>
+									</div>
+
+									<a class="btn btn-sm btn-outline-secondary" href="{{ wpurl|trim('/', 'right') }}/wp-admin/" target="_blank" rel="noopener"
+									   title="{{ pv_t('Open wp-admin') }}" aria-label="{{ pv_t('Open wp-admin of %s', wpurl) }}">
+										<i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+									</a>
+								</div>
+							</div>
+
+							{% if wp.jobs|length > 0 %}
+								<div class="pv-inset">
+									{{ k.section(pv_t('Jobs')) }}
+									{% if wp.busy %}
+										<div class="small text-body-secondary mb-2">
+											<i class="fa-solid fa-hourglass-half me-1" aria-hidden="true"></i>
+											{{ pv_t('Runs in the background, within a minute at most.') }}
+											<a href="{{ linker({'section': 'projects', 'page': 'detail', 'id': project.id}) }}#box-wordpress">{{ pv_t('Reload') }}</a>
+										</div>
+									{% endif %}
+									{% for job in wp.jobs %}
+										<div class="d-flex align-items-center gap-2 flex-wrap small py-1">
+											{{ k.job_status(job.status) }}
+											<span class="fw-medium">{{ wp_types[job.type] is defined ? pv_t(wp_types[job.type]) : job.type }}</span>
+											<span class="text-body-secondary">{{ job.created_at|date('d.m., H:i') }} · {{ job.created_by }}</span>
+											{% if job.log %}
+												<button class="btn btn-link btn-sm p-0 ms-auto" type="button" data-bs-toggle="collapse"
+												        data-bs-target="#job-{{ job.id }}" aria-expanded="false" aria-controls="job-{{ job.id }}">{{ pv_t('Log') }}</button>
+											{% endif %}
+										</div>
+										{% if job.log %}
+											<div class="collapse" id="job-{{ job.id }}">
+												{% if job.backup_path %}
+													<div class="small text-body-secondary mb-1">
+														<i class="fa-solid fa-box-archive me-1" aria-hidden="true"></i>{{ pv_t('Backup:') }} <code>{{ job.backup_path }}</code>
+													</div>
+												{% endif %}
+												<pre class="pv-log small mb-2">{{ job.log }}</pre>
+											</div>
+										{% endif %}
+									{% endfor %}
+								</div>
+							{% endif %}
+						</div>
+					{% else %}
+						{{ k.empty(pv_t('No WordPress installation found. The scan runs once a day over the document root and one to two levels below it.')) }}
+					{% endfor %}
+				</div>
+			</section>
+		</div>
+
+		{# ------------------------------------------------------------- #}
+		{# Subdomains #}
+		<div class="col-12 col-xl-6">
+			<section class="card h-100 pv-box" id="box-subdomains">
+				{{ k.header('fa-solid fa-sitemap', 'Subdomains', subdomains|length, 'new-subdomain', pv_t('Create')) }}
+				<div class="collapse" id="new-subdomain">
+					<form method="post" class="pv-form p-3 bg-body-tertiary border-bottom">
+						{{ k.form_header(csrf_token, project.id, 'subdomain_add') }}
+						<div class="row g-2">
+							<div class="col-sm-6">
+								<label class="form-label small mb-1" for="new-sub-name">{{ pv_t('Name') }}</label>
+								<div class="input-group input-group-sm">
+									<input type="text" class="form-control" id="new-sub-name" name="subdomain" required spellcheck="false">
+									<span class="input-group-text">.{{ project_name }}</span>
+								</div>
+							</div>
+							<div class="col-sm-6">
+								<label class="form-label small mb-1" for="new-sub-path">{{ pv_t('Directory') }} <span class="text-body-secondary">({{ pv_t('optional') }})</span></label>
+								<input type="text" class="form-control form-control-sm font-monospace" id="new-sub-path" name="path" spellcheck="false"
+								       aria-describedby="new-sub-help">
+							</div>
+						</div>
+						<div class="form-text" id="new-sub-help">{{ pv_t('Without a directory, Froxlor creates one named after the subdomain.') }} {{ k.delayed() }}</div>
+						<button type="submit" class="btn btn-sm btn-primary mt-2">{{ pv_t('Create subdomain') }}</button>
+					</form>
+				</div>
+				<div class="list-group list-group-flush">
+					{% for sub in subdomains %}
+						{% set subname = sub.domain_ace ?: sub.domain %}
+						<div class="list-group-item">
+							<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+								<div class="min-w-0">
+									<div class="fw-medium text-break">
+										{{ subname }}
+										{% if sub.deactivated %}<span class="badge text-bg-secondary ms-1">{{ pv_t('deactivated') }}</span>{% endif %}
+										{% if sub.letsencrypt %}<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle fw-normal ms-1"><i class="fa-solid fa-lock me-1" aria-hidden="true"></i>Let's Encrypt</span>{% endif %}
+										{% set auto = ssl_auto[sub.id] ?? null %}
+										{% if auto and not sub.letsencrypt and auto.status != 'done' %}
+											<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-normal ms-1"><i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>{{ ssl_auto_labels[auto.status] is defined ? pv_t(ssl_auto_labels[auto.status]) : auto.status }}</span>
+										{% endif %}
+									</div>
+									{% if auto and not sub.letsencrypt and auto.status in ['failed', 'given_up'] and auto.message %}
+										<div class="small text-warning-emphasis text-break">{{ auto.message }}</div>
+									{% endif %}
+									<div class="small text-body-secondary text-break">
+										<i class="fa-solid {{ sub.is_redirect ? 'fa-share' : 'fa-folder' }} me-1" aria-hidden="true"></i>{{ sub.is_redirect ? pv_t('Redirect to %s', sub.documentroot) : sub.documentroot }}
+									</div>
+								</div>
+								<div class="d-flex gap-1 pv-actions">
+									<a class="btn btn-sm btn-outline-secondary" href="{{ sub.ssl_enabled ? 'https' : 'http' }}://{{ subname }}" target="_blank" rel="noopener"
+									   title="{{ pv_t('Open subdomain') }}" aria-label="{{ pv_t('Open %s', subname) }}">
+										<i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+									</a>
+									<button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse"
+									        data-bs-target="#sub-{{ sub.id }}" aria-expanded="false" aria-controls="sub-{{ sub.id }}"
+									        title="{{ pv_t('Edit') }}" aria-label="{{ pv_t('Edit %s', subname) }}">
+										<i class="fa-solid fa-pen" aria-hidden="true"></i>
+									</button>
+								</div>
+							</div>
+							<div class="collapse" id="sub-{{ sub.id }}">
+								<div class="pv-inset">
+									<form method="post" class="pv-form">
+										{{ k.form_header(csrf_token, project.id, 'subdomain_update') }}
+										<input type="hidden" name="subid" value="{{ sub.id }}">
+										<label class="form-label small mb-1" for="sub-target-{{ sub.id }}">{{ pv_t('Target') }}</label>
+										<input type="text" class="form-control form-control-sm font-monospace" id="sub-target-{{ sub.id }}" name="target"
+										       value="{{ sub.relative_path }}" spellcheck="false" required aria-describedby="sub-target-help-{{ sub.id }}">
+										<div class="form-text" id="sub-target-help-{{ sub.id }}">
+											{{ pv_t('A directory relative to %1$s — or an address starting with %2$s for a redirect.', '<code>' ~ sub.customer_docroot|e ~ '</code>', '<code>https://</code>')|raw }}
+										</div>
+										{% if opt.use_ssl %}
+											<div class="mt-2">
+												{{ k.toggle('letsencrypt', 'sub-le-' ~ sub.id, sub.letsencrypt, pv_t('Let\'s Encrypt certificate')) }}
+												{{ k.toggle('ssl_redirect', 'sub-redirect-' ~ sub.id, sub.ssl_redirect, pv_t('Redirect HTTP to HTTPS')) }}
+												<label class="form-label small mb-1 mt-2" for="sub-alias-{{ sub.id }}">{{ pv_t('Server alias') }}</label>
+												<select class="form-select form-select-sm" id="sub-alias-{{ sub.id }}" name="selectserveralias">
+													<option value="0" {{ sub.iswildcarddomain ? 'selected' }}>{{ pv_t('Wildcard (*.%s)', subname) }}</option>
+													<option value="1" {{ not sub.iswildcarddomain and sub.wwwserveralias ? 'selected' }}>www.{{ subname }}</option>
+													<option value="2" {{ not sub.iswildcarddomain and not sub.wwwserveralias ? 'selected' }}>{{ pv_t('No alias') }}</option>
+												</select>
+												<div class="form-text">{{ pv_t('For Let\'s Encrypt, choose www or no alias.') }}</div>
+											</div>
+										{% endif %}
+										<div class="d-flex align-items-center gap-2 flex-wrap mt-2">
+											<button type="submit" class="btn btn-sm btn-primary">{{ pv_t('Save') }}</button>
+											{{ k.delayed() }}
+										</div>
+									</form>
+									{{ k.delete_zone(csrf_token, project.id, 'subdomain_delete', 'subid', sub.id, sub.domain,
+										pv_t('Delete subdomain'),
+										pv_t('Removes the subdomain from the web server configuration. The files in the directory are kept.'),
+										false) }}
+								</div>
+							</div>
+						</div>
+					{% else %}
+						{{ k.empty(pv_t('No subdomains.')) }}
+					{% endfor %}
+				</div>
+			</section>
+		</div>
+
+		{# ------------------------------------------------------------- #}
+		{# Email #}
+		<div class="col-12 col-xl-6">
+			<section class="card h-100 pv-box" id="box-email">
+				{{ k.header('fa-solid fa-envelope', pv_t('Email'), emails|length, 'new-email', pv_t('Create address')) }}
+				<div class="collapse" id="new-email">
+					<form method="post" class="pv-form p-3 bg-body-tertiary border-bottom">
+						{{ k.form_header(csrf_token, project.id, 'email_add') }}
+						<div class="row g-2">
+							<div class="col-sm-6">
+								<label class="form-label small mb-1" for="new-mail-name">{{ pv_t('Address') }}</label>
+								<div class="input-group input-group-sm">
+									<input type="text" class="form-control" id="new-mail-name" name="email_part" required spellcheck="false" autocomplete="off">
+									<span class="input-group-text">@{{ project_name }}</span>
+								</div>
+							</div>
+							<div class="col-sm-6">
+								<label class="form-label small mb-1" for="new-mail-pw">{{ pv_t('Mailbox password') }} <span class="text-body-secondary">({{ pv_t('optional') }})</span></label>
+								<input type="text" class="form-control form-control-sm" id="new-mail-pw" name="email_password"
+								       autocomplete="new-password" spellcheck="false" aria-describedby="new-mail-help">
+							</div>
+						</div>
+						<div class="form-text" id="new-mail-help">{{ pv_t('With a password, a mailbox is set up right away; without one, only the address is created — for example for a pure forwarder.') }}</div>
+						<button type="submit" class="btn btn-sm btn-primary mt-2">{{ pv_t('Create address') }}</button>
+					</form>
+				</div>
+				<div class="list-group list-group-flush">
+					{% for mail in emails %}
+						<div class="list-group-item">
+							<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+								<div class="min-w-0">
+									<div class="fw-medium text-break">{{ mail.email_full }}</div>
+									<div class="d-flex flex-wrap gap-1 mt-1">
+										{% if mail.has_account %}
+											{{ k.status(mail.account_active, mail.account_active ? pv_t('Mailbox') : pv_t('Mailbox blocked')) }}
+											{% if opt.quota and mail.quota > 0 %}
+												<span class="badge bg-body-secondary text-body-secondary border fw-normal">{{ mail.quota }} MB</span>
+											{% endif %}
+										{% else %}
+											<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle fw-normal">{{ pv_t('no mailbox') }}</span>
+										{% endif %}
+										{% if mail.iscatchall %}
+											<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-normal">Catchall</span>
+										{% endif %}
+									</div>
+									{% if mail.forwarders|length > 0 %}
+										<div class="small text-body-secondary mt-1 text-break">
+											<i class="fa-solid fa-share me-1" aria-hidden="true"></i>{{ mail.forwarders|map(w => w.target)|join(', ') }}
+										</div>
+									{% endif %}
+								</div>
+								<div class="d-flex gap-1 pv-actions">
+									{% if opt.webmail_url and mail.has_account %}
+										<a class="btn btn-sm btn-outline-secondary text-nowrap" href="{{ opt.webmail_url }}" target="_blank" rel="noopener"
+										   title="{{ pv_t('Open in Roundcube') }}" aria-label="{{ pv_t('Open %s in Roundcube', mail.email_full) }}">
+											<i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="ms-1 d-none d-sm-inline">Webmail</span>
+										</a>
+									{% endif %}
+									<button class="btn btn-sm btn-outline-secondary text-nowrap" type="button" data-bs-toggle="collapse"
+									        data-bs-target="#mail-{{ mail.id }}" aria-expanded="false" aria-controls="mail-{{ mail.id }}">
+										<i class="fa-solid fa-pen" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Edit') }}</span>
+									</button>
+								</div>
+							</div>
+
+							<div class="collapse" id="mail-{{ mail.id }}">
+								<div class="pv-inset">
+
+									{{ k.section(pv_t('Mailbox')) }}
+									{% if mail.has_account %}
+										{{ k.password(csrf_token, project.id, 'email_password', 'emailid', mail.id, 'email_password', pv_t('Change password')) }}
+										{% if opt.quota %}
+											<form method="post" class="pv-form mt-2">
+												{{ k.form_header(csrf_token, project.id, 'email_quota') }}
+												<input type="hidden" name="emailid" value="{{ mail.id }}">
+												<label class="form-label small mb-1" for="quota-{{ mail.id }}">{{ pv_t('Disk space in MB') }}</label>
+												<div class="d-flex gap-2 flex-wrap">
+													<input type="number" min="0" class="form-control form-control-sm w-auto" id="quota-{{ mail.id }}" name="email_quota" value="{{ mail.quota|default(0) }}">
+													<button type="submit" class="btn btn-sm btn-outline-primary">{{ pv_t('Save') }}</button>
+												</div>
+											</form>
+										{% endif %}
+									{% else %}
+										{{ k.password(csrf_token, project.id, 'email_account_add', 'emailid', mail.id, 'email_password', pv_t('Set up mailbox')) }}
+									{% endif %}
+
+									{{ k.section(pv_t('Forwarders')) }}
+									{% for w in mail.forwarders %}
+										<form method="post" class="pv-form d-flex align-items-center gap-2 mb-1">
+											{{ k.form_header(csrf_token, project.id, 'email_forward_delete') }}
+											<input type="hidden" name="emailid" value="{{ mail.id }}">
+											<input type="hidden" name="forwarderid" value="{{ w.index }}">
+											<span class="small text-break flex-grow-1">{{ w.target }}</span>
+											<button type="submit" class="btn btn-sm btn-outline-danger" title="{{ pv_t('Remove forwarder') }}" aria-label="{{ pv_t('Remove forwarder to %s', w.target) }}">
+												<i class="fa-solid fa-xmark" aria-hidden="true"></i>
+											</button>
+										</form>
+									{% endfor %}
+									<form method="post" class="pv-form mt-1">
+										{{ k.form_header(csrf_token, project.id, 'email_forward_add') }}
+										<input type="hidden" name="emailid" value="{{ mail.id }}">
+										<label class="form-label small mb-1" for="fw-{{ mail.id }}">{{ pv_t('Forward to') }}</label>
+										<div class="d-flex gap-2 flex-wrap">
+											<input type="email" class="form-control form-control-sm flex-grow-1 w-auto" id="fw-{{ mail.id }}" name="destination" required spellcheck="false">
+											<button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">{{ pv_t('Add') }}</button>
+										</div>
+									</form>
+
+									{% if opt.senders %}
+										{{ k.section(pv_t('Sender aliases')) }}
+										{% for s in mail.senders %}
+											<form method="post" class="pv-form d-flex align-items-center gap-2 mb-1">
+												{{ k.form_header(csrf_token, project.id, 'email_sender_delete') }}
+												<input type="hidden" name="emailid" value="{{ mail.id }}">
+												<input type="hidden" name="senderid" value="{{ s.id }}">
+												<span class="small text-break flex-grow-1">{{ s.allowed_sender }}</span>
+												<button type="submit" class="btn btn-sm btn-outline-danger" title="{{ pv_t('Remove alias') }}" aria-label="{{ pv_t('Remove sender alias %s', s.allowed_sender) }}">
+													<i class="fa-solid fa-xmark" aria-hidden="true"></i>
+												</button>
+											</form>
+										{% endfor %}
+										<form method="post" class="pv-form mt-1">
+											{{ k.form_header(csrf_token, project.id, 'email_sender_add') }}
+											<input type="hidden" name="emailid" value="{{ mail.id }}">
+											<label class="form-label small mb-1" for="snd-{{ mail.id }}">{{ pv_t('May also send as') }}</label>
+											<div class="d-flex gap-2 flex-wrap">
+												<input type="text" class="form-control form-control-sm flex-grow-1 w-auto" id="snd-{{ mail.id }}" name="allowed_sender" required spellcheck="false">
+												<button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">{{ pv_t('Add') }}</button>
+											</div>
+										</form>
+									{% endif %}
+
+									{{ k.section(pv_t('Settings')) }}
+									<form method="post" class="pv-form">
+										{{ k.form_header(csrf_token, project.id, 'email_update') }}
+										<input type="hidden" name="emailid" value="{{ mail.id }}">
+										{{ k.toggle('iscatchall', 'catchall-' ~ mail.id, mail.iscatchall, pv_t('Catchall — accepts mail for all unknown addresses of the domain')) }}
+										{% if opt.antispam %}
+											{{ k.toggle('bypass_spam', 'bypass-' ~ mail.id, mail.bypass_spam, pv_t('Bypass spam filter')) }}
+											{{ k.toggle('rewrite_subject', 'rewrite-' ~ mail.id, mail.rewrite_subject, pv_t('Mark subject of spam')) }}
+											{{ k.toggle('policy_greylist', 'grey-' ~ mail.id, mail.policy_greylist, 'Greylisting') }}
+											<div class="row g-2 mt-1">
+												<div class="col-6">
+													<label class="form-label small mb-1" for="spamtag-{{ mail.id }}">{{ pv_t('Tag from score') }}</label>
+													<input type="number" step="0.1" class="form-control form-control-sm" id="spamtag-{{ mail.id }}" name="spam_tag_level" value="{{ mail.spam_tag_level }}">
+												</div>
+												<div class="col-6">
+													<label class="form-label small mb-1" for="spamkill-{{ mail.id }}">{{ pv_t('Reject from score') }}</label>
+													<input type="number" step="0.1" class="form-control form-control-sm" id="spamkill-{{ mail.id }}" name="spam_kill_level" value="{{ mail.spam_kill_level }}">
+												</div>
+											</div>
+										{% endif %}
+										<label class="form-label small mb-1 mt-2" for="desc-{{ mail.id }}">{{ pv_t('Description') }}</label>
+										<input type="text" class="form-control form-control-sm" id="desc-{{ mail.id }}" name="description" value="{{ mail.description }}">
+										<button type="submit" class="btn btn-sm btn-primary mt-2">{{ pv_t('Save') }}</button>
+									</form>
+
+									{{ k.section(pv_t('Delete')) }}
+									{% if mail.has_account %}
+										{{ k.delete_zone(csrf_token, project.id, 'email_account_delete', 'emailid', mail.id, mail.email_full,
+											pv_t('Delete the mailbox only'),
+											pv_t('The address and its forwarders are kept, but incoming mail is no longer stored.'),
+											pv_t('Also delete all stored emails on the server')) }}
+									{% endif %}
+									{{ k.delete_zone(csrf_token, project.id, 'email_delete', 'emailid', mail.id, mail.email_full,
+										pv_t('Delete address'),
+										pv_t('Removes the address along with its mailbox and forwarders. Mail sent to it is rejected afterwards.'),
+										mail.has_account ? pv_t('Also delete all stored emails on the server') : false) }}
+								</div>
+							</div>
+						</div>
+					{% else %}
+						{{ k.empty(pv_t('No email addresses for this domain.')) }}
+					{% endfor %}
+				</div>
+				{% if mail_package %}
+					<div class="card-body border-top" role="group" aria-labelledby="mail-package-title">
+						<div class="pv-section mt-0" id="mail-package-title">{{ pv_t('Mail package') }}{% if mail_package.mode == 'dry_run' %} · {{ pv_t('Dry run') }}{% endif %}</div>
+						{% if mail_package.mode == 'dry_run' %}
+							<p class="small mb-2 text-body-secondary">{{ pv_t('Nothing is created. The rows show what the “On” mode would create.') }}</p>
+						{% endif %}
+						<p class="small mb-2">
+							{{ pv_t('For mail clients: server %s, IMAP 993 and SMTP 465 with SSL (or 587 with STARTTLS); the username is the full address.', '<code>' ~ mail_package.mail_server|e ~ '</code>')|raw }}
+						</p>
+						<ul class="list-unstyled small mb-0 d-grid gap-3">
+							{% for row in mail_package.rows %}
+								<li>
+									<div class="d-flex justify-content-between align-items-start gap-2">
+										<span class="min-w-0 text-break"><span class="fw-medium">{{ row.name }}</span> <span class="text-body-secondary">· {{ row.purpose }}</span></span>
+										<span class="flex-shrink-0">{{ k.mail_package_status(row.status, row.text) }}</span>
+									</div>
+									{% if row.message %}<div class="text-body-secondary text-break mt-1 ps-2 border-start">{{ row.message }}</div>{% endif %}
+								</li>
+							{% endfor %}
+						</ul>
+						{% if mail_package.waiting_dns %}
+							<div class="form-text mt-3">
+								{{ pv_t('For Let\'s Encrypt to verify, the DNS of %1$s must point to this server: the easiest way is an entry %2$s (A and AAAA). The cron job checks hourly.', project_name|e, '<code>*</code>')|raw }}
+							</div>
+						{% endif %}
+					</div>
+				{% endif %}
+			</section>
+		</div>
+
+		{# ------------------------------------------------------------- #}
+		{# Databases #}
+		<div class="col-12 col-xl-6">
+			<section class="card h-100 pv-box" id="box-databases">
+				{{ k.header('fa-solid fa-database', pv_t('Databases'), databases|length, 'new-db', pv_t('Create')) }}
+				<div class="collapse" id="new-db">
+					<form method="post" class="pv-form p-3 bg-body-tertiary border-bottom">
+						{{ k.form_header(csrf_token, project.id, 'db_add') }}
+						<div class="row g-2">
+							<div class="col-sm-6">
+								<label class="form-label small mb-1" for="new-db-pw">{{ pv_t('Password') }}</label>
+								<input type="text" class="form-control form-control-sm" id="new-db-pw" name="mysql_password" required autocomplete="new-password" spellcheck="false">
+							</div>
+							<div class="col-sm-6">
+								<label class="form-label small mb-1" for="new-db-desc">{{ pv_t('Description') }} <span class="text-body-secondary">({{ pv_t('optional') }})</span></label>
+								<input type="text" class="form-control form-control-sm" id="new-db-desc" name="description">
+							</div>
+						</div>
+						<div class="form-text">{{ pv_t('Froxlor assigns the name. The database is automatically assigned to this project.') }}</div>
+						<button type="submit" class="btn btn-sm btn-primary mt-2">{{ pv_t('Create database') }}</button>
+					</form>
+				</div>
+				<div class="list-group list-group-flush">
+					{% for db in databases %}
+						<div class="list-group-item">
+							<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+								<div class="min-w-0">
+									<code class="fw-medium">{{ db.databasename }}</code>
+									{% if db.description %}<div class="small text-body-secondary text-break">{{ db.description }}</div>{% endif %}
+								</div>
+								<div class="d-flex gap-1 flex-wrap pv-actions">
+									{% if opt.phpmyadmin_url %}
+										<a class="btn btn-sm btn-outline-secondary text-nowrap" target="_blank" rel="noopener"
+										   href="{{ opt.phpmyadmin_url ~ ('?' in opt.phpmyadmin_url ? '&' : '?') ~ 'db=' ~ db.databasename|url_encode }}">
+											<i class="fa-solid fa-table" aria-hidden="true"></i><span class="ms-1">phpMyAdmin</span>
+										</a>
+									{% endif %}
+									{% if opt.adminer_url %}
+										<a class="btn btn-sm btn-outline-secondary text-nowrap" target="_blank" rel="noopener"
+										   href="{{ opt.adminer_url ~ ('?' in opt.adminer_url ? '&' : '?') ~ 'username=' ~ db.databasename|url_encode ~ '&db=' ~ db.databasename|url_encode }}">
+											<i class="fa-solid fa-table-list" aria-hidden="true"></i><span class="ms-1">Adminer</span>
+										</a>
+									{% endif %}
+									<button class="btn btn-sm btn-outline-secondary text-nowrap" type="button" data-bs-toggle="collapse"
+									        data-bs-target="#db-{{ db.id }}" aria-expanded="false" aria-controls="db-{{ db.id }}">
+										<i class="fa-solid fa-pen" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Edit') }}</span>
+									</button>
+								</div>
+							</div>
+							<div class="collapse" id="db-{{ db.id }}">
+								<div class="pv-inset">
+									<form method="post" class="pv-form">
+										{{ k.form_header(csrf_token, project.id, 'db_update') }}
+										<input type="hidden" name="dbid" value="{{ db.id }}">
+										<div class="row g-2">
+											<div class="col-sm-6">
+												<label class="form-label small mb-1" for="db-desc-{{ db.id }}">{{ pv_t('Description') }}</label>
+												<input type="text" class="form-control form-control-sm" id="db-desc-{{ db.id }}" name="description" value="{{ db.description }}">
+											</div>
+											<div class="col-sm-6">
+												<label class="form-label small mb-1" for="db-pw-{{ db.id }}">{{ pv_t('New password') }} <span class="text-body-secondary">({{ pv_t('optional') }})</span></label>
+												<input type="text" class="form-control form-control-sm" id="db-pw-{{ db.id }}" name="mysql_password"
+												       autocomplete="new-password" spellcheck="false" aria-describedby="db-pw-help-{{ db.id }}">
+											</div>
+										</div>
+										<div class="form-text" id="db-pw-help-{{ db.id }}">{{ pv_t('Leave empty to keep the password.') }}</div>
+										<button type="submit" class="btn btn-sm btn-primary mt-2">{{ pv_t('Save') }}</button>
+									</form>
+
+									{{ k.section(pv_t('Unassign')) }}
+									<form method="post" class="pv-form d-flex align-items-center gap-2 flex-wrap">
+										{{ k.form_header(csrf_token, project.id, 'unassign') }}
+										<input type="hidden" name="resource_type" value="database">
+										<input type="hidden" name="resource_id" value="{{ db.id }}">
+										<span class="small text-body-secondary flex-grow-1">{{ pv_t('Only removes the assignment to this project. The database is kept and appears under “Unassigned”.') }}</span>
+										<button type="submit" class="btn btn-sm btn-outline-warning text-nowrap">
+											<i class="fa-solid fa-link-slash" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Unassign') }}</span>
+										</button>
+									</form>
+
+									{{ k.delete_zone(csrf_token, project.id, 'db_delete', 'dbid', db.id, db.databasename,
+										pv_t('Delete database'),
+										pv_t('Permanently deletes the database with all tables and contents. Make a backup first if you still need it.'),
+										false) }}
+								</div>
+							</div>
+						</div>
+					{% else %}
+						{{ k.empty(pv_t('No database is assigned to this project yet. Froxlor has no concept of a domain for databases — the assignment is made here or under “Unassigned”.')) }}
+					{% endfor %}
+				</div>
+			</section>
+		</div>
+
+		{# ------------------------------------------------------------- #}
+		{# FTP #}
+		<div class="col-12 col-xl-6">
+			<section class="card h-100 pv-box" id="box-ftp">
+				{{ k.header('fa-solid fa-folder-tree', pv_t('FTP accounts'), ftps|length, 'new-ftp', pv_t('Create')) }}
+				<div class="collapse" id="new-ftp">
+					<form method="post" class="pv-form p-3 bg-body-tertiary border-bottom">
+						{{ k.form_header(csrf_token, project.id, 'ftp_add') }}
+						<div class="row g-2">
+							<div class="col-sm-6">
+								<label class="form-label small mb-1" for="new-ftp-pw">{{ pv_t('Password') }}</label>
+								<input type="text" class="form-control form-control-sm" id="new-ftp-pw" name="ftp_password" required autocomplete="new-password" spellcheck="false">
+							</div>
+							<div class="col-sm-6">
+								<label class="form-label small mb-1" for="new-ftp-desc">{{ pv_t('Description') }} <span class="text-body-secondary">({{ pv_t('optional') }})</span></label>
+								<input type="text" class="form-control form-control-sm" id="new-ftp-desc" name="description">
+							</div>
+						</div>
+						<div class="form-text">{{ pv_t('The target directory is the project\'s document root.') }}</div>
+						<button type="submit" class="btn btn-sm btn-primary mt-2">{{ pv_t('Create FTP account') }}</button>
+					</form>
+				</div>
+				<div class="list-group list-group-flush">
+					{% for ftp in ftps %}
+						<div class="list-group-item">
+							<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+								<div class="min-w-0">
+									<code class="fw-medium">{{ ftp.username }}</code>
+									{% if not ftp.login_enabled %}<span class="badge text-bg-secondary ms-1">{{ pv_t('blocked') }}</span>{% endif %}
+									<div class="small text-body-secondary text-break">{{ ftp.homedir }}</div>
+								</div>
+								<button class="btn btn-sm btn-outline-secondary text-nowrap" type="button" data-bs-toggle="collapse"
+								        data-bs-target="#ftp-{{ ftp.id }}" aria-expanded="false" aria-controls="ftp-{{ ftp.id }}">
+									<i class="fa-solid fa-pen" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Edit') }}</span>
+								</button>
+							</div>
+							<div class="collapse" id="ftp-{{ ftp.id }}">
+								<div class="pv-inset">
+									{{ k.password(csrf_token, project.id, 'ftp_password', 'ftpid', ftp.id, 'ftp_password', pv_t('Change password')) }}
+									{{ k.section(pv_t('Unassign')) }}
+									<form method="post" class="pv-form d-flex align-items-center gap-2 flex-wrap">
+										{{ k.form_header(csrf_token, project.id, 'unassign') }}
+										<input type="hidden" name="resource_type" value="ftp">
+										<input type="hidden" name="resource_id" value="{{ ftp.id }}">
+										<span class="small text-body-secondary flex-grow-1">{{ pv_t('Only removes the assignment. The account is kept.') }}</span>
+										<button type="submit" class="btn btn-sm btn-outline-warning text-nowrap">
+											<i class="fa-solid fa-link-slash" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Unassign') }}</span>
+										</button>
+									</form>
+								</div>
+							</div>
+						</div>
+					{% else %}
+						{{ k.empty(pv_t('No FTP account is assigned to this project yet.')) }}
+					{% endfor %}
+					<div class="list-group-item small">
+						<a href="{{ linker(as_customer|merge({'target': 'ftp'})) }}">
+							<i class="fa-solid fa-right-to-bracket me-1" aria-hidden="true"></i>{{ pv_t('All FTP accounts in the customer area') }}
+						</a>
+					</div>
+				</div>
+			</section>
+		</div>
+
+		{# ------------------------------------------------------------- #}
+		{# Customer #}
+		<div class="col-12 col-xl-6">
+			<section class="card h-100 pv-box" id="box-customer">
+				{{ k.header('fa-solid fa-user', pv_t('Customer'), null, '', '') }}
+				<div class="list-group list-group-flush">
+					<div class="list-group-item">
+						<div class="fw-semibold">{{ project.customer_label }}</div>
+						<div class="small text-body-secondary text-break">
+							{{ project.loginname }}{% if project.customer_email %} · {{ project.customer_email }}{% endif %}
+						</div>
+						{% if project.customer_deactivated %}
+							<span class="badge text-bg-danger mt-2">{{ pv_t('Customer account deactivated') }}</span>
+						{% endif %}
+					</div>
+					<div class="list-group-item small d-flex flex-wrap gap-3">
+						<a href="{{ linker({'section': 'customers', 'page': 'customers', 'action': 'edit', 'id': project.customerid}) }}">
+							<i class="fa-solid fa-pen me-1" aria-hidden="true"></i>{{ pv_t('Edit customer record') }}
+						</a>
+						<a href="{{ linker(as_customer|merge({'target': 'index'})) }}">
+							<i class="fa-solid fa-right-to-bracket me-1" aria-hidden="true"></i>{{ pv_t('Log in as customer') }}
+						</a>
+					</div>
+				</div>
+			</section>
+		</div>
+
+		{# Backup: only when the optional Backup extension is installed, and only
+		   for admins with the right to change server settings. #}
+		{% if backup and backup.allowed %}
+		<div class="col-12 col-xl-6">
+			<section class="card h-100 pv-box" id="box-backup">
+				{{ k.header('fa-solid fa-cloud-arrow-up', 'Backup', null, '', '') }}
+				<div class="list-group list-group-flush">
+					{% if not backup.configured %}
+						<div class="list-group-item small">
+							{{ pv_t('No storage destination set up yet.') }}
+							<a href="{{ linker({'section': 'backup', 'page': 'setup'}) }}">{{ pv_t('Set up now') }}</a>
+						</div>
+					{% else %}
+						<div class="list-group-item d-flex flex-wrap justify-content-between align-items-center gap-2">
+							<div>
+								<div class="small text-body-secondary">{{ pv_t('Last backup') }}</div>
+								{% if backup.last_backup %}
+									<div class="fw-semibold">{{ backup.last_backup }}</div>
+								{% else %}
+									<div class="fw-semibold text-warning-emphasis"><i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>{{ pv_t('not backed up yet') }}</div>
+								{% endif %}
+								{% if backup.stale and backup.last_backup %}
+									<div class="small text-warning-emphasis"><i class="fa-solid fa-triangle-exclamation me-1" aria-hidden="true"></i>{{ pv_t('overdue') }}</div>
+								{% endif %}
+							</div>
+							{% if backup.last_backup %}
+								<a class="btn btn-sm btn-primary" href="{{ linker({'section': 'backup', 'page': 'restore'}|merge(backup.restore_params)) }}">
+									<i class="fa-solid fa-rotate-left" aria-hidden="true"></i><span class="ms-1">{{ pv_t('Restore this project') }}</span>
+								</a>
+							{% endif %}
+						</div>
+						{% if backup.last_backup %}
+							<div class="list-group-item small d-flex flex-wrap gap-3">
+								<a href="{{ linker({'section': 'backup', 'page': 'restore'}|merge(backup.restore_params)|merge({'scope': 'web'})) }}"><i class="fa-solid fa-globe me-1" aria-hidden="true"></i>{{ pv_t('website only') }}</a>
+								<a href="{{ linker({'section': 'backup', 'page': 'restore'}|merge(backup.restore_params)|merge({'scope': 'mail'})) }}"><i class="fa-solid fa-envelope me-1" aria-hidden="true"></i>{{ pv_t('email only') }}</a>
+								<a href="{{ linker({'section': 'backup', 'page': 'restore'}|merge(backup.restore_params)|merge({'scope': 'db'})) }}"><i class="fa-solid fa-database me-1" aria-hidden="true"></i>{{ pv_t('databases only') }}</a>
+							</div>
+						{% endif %}
+					{% endif %}
+				</div>
+			</section>
+		</div>
+		{% endif %}
+
+	</div>
+
+</div>
+{% endblock %}
