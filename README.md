@@ -3,7 +3,7 @@
 A project-centred admin view for [Froxlor](https://froxlor.org) — for agencies
 and freelancers who think in customer projects, not in resource types.
 
-**Version 1.0.0** · Froxlor 2.3.x (developed against 2.3.13, checked against
+**Version 1.0.1** · Froxlor 2.3.x (developed against 2.3.13, checked against
 2.3.16) · PHP 8.1 or newer · GPL-2.0-or-later
 
 Froxlor arranges resources by type: one list of all domains, one of all email
