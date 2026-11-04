@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- Security: WP-CLI runs under `prlimit` (memory 4 GiB, CPU time, file size, no core dumps); `prlimit` (util-linux) is now required.
+- Security: the WordPress autologin refuses websites reached over plain `http://`, so the one-time link and the login cookie are never sent unencrypted.
+
 ## 1.0.0
 
 Initial public release.

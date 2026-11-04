@@ -106,6 +106,7 @@ check('  → only the allowlist, HOME and the extras', $environment, [
 	'EXTRA=1',
 ]);
 check('  → the expected path follows the script', array_slice($prefix, -2), ['froxlor-project-view', $base . '/customer/site']);
+check('  → prlimit caps memory, CPU time and file size', in_array('prlimit', $prefix, true) && count(preg_grep('/^--(as|cpu|fsize)=/', $prefix)) === 3, true);
 check('  → setpriv drops groups and new privileges', in_array('--clear-groups', $prefix, true) && in_array('--no-new-privs', $prefix, true), true);
 
 exec('rm -rf ' . escapeshellarg($base));

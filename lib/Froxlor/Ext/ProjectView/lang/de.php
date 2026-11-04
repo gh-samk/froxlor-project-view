@@ -346,6 +346,7 @@ return [
 	'The SSL setting could not be applied. Froxlor only allows SSL and Let\'s Encrypt if SSL is enabled system-wide (Settings › SSL) and the domain has an SSL-capable IP address assigned.' => 'Die SSL-Einstellung liess sich nicht übernehmen. Froxlor erlaubt SSL und Let\'s Encrypt nur, wenn SSL systemweit aktiv ist (Einstellungen › SSL) und der Domain eine SSL-fähige IP-Adresse zugewiesen ist.',
 	'The target directory is the project\'s document root.' => 'Zielverzeichnis ist der Dokumentpfad des Projekts.',
 	'The tool “%s” is missing on the server.' => 'Das Werkzeug „%s“ fehlt auf dem Server.',
+	'Autologin needs a website address with https, so that the link and the login cookie are not sent unencrypted.' => 'Der Autologin braucht eine Website-Adresse mit https, damit Link und Login-Cookie nicht unverschlüsselt übertragen werden.',
 	'The website address is invalid.' => 'Die Adresse der Website ist ungültig.',
 	'The website address is not known yet — run “Check now” first.' => 'Die Adresse der Website ist noch nicht bekannt — zuerst „Jetzt prüfen“ ausführen.',
 	'The WP-CLI home directory is a symbolic link — aborted.' => 'Das WP-CLI-Heimatverzeichnis ist ein symbolischer Link — abgebrochen.',

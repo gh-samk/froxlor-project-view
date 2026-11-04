@@ -91,7 +91,7 @@ current or future upstream namespace.
     `/usr/bin/wp` and `/opt/wp-cli/wp`, otherwise set the path in the
     settings. Without WP-CLI the project page shows a note; everything else
     keeps working.
-  * `setpriv` (util-linux), `timeout` (coreutils), `bash`, `tar`, `gzip` —
+  * `setpriv` and `prlimit` (util-linux), `timeout` (coreutils), `bash`, `tar`, `gzip` —
     present on Debian and Ubuntu.
   * `mysqldump` or `mariadb-dump` for the database backup. It runs with the
     server's client settings (`/etc/mysql/`), i.e. with the same socket and
@@ -407,8 +407,11 @@ Froxlor's system log entries are always English.
   and group ID, without supplementary groups and with `--no-new-privs`, with
   a scrubbed environment (`env -i` plus an explicit allowlist, the
   customer's own home directory), with all inherited file descriptors closed,
-  with a time limit (120 seconds for read-only checks), and without loading
-  plugins and themes. stdout and stderr are read through size-capped pipes.
+  with a time limit (120 seconds for read-only checks), with `prlimit` caps on
+  memory (4 GiB), CPU time and file size, and without loading plugins and
+  themes. Note that the customer's own code still runs outside the PHP-FPM
+  pool's `open_basedir` and `disable_functions`; the number of processes is
+  not capped, since the limit counts all of the customer's processes. stdout and stderr are read through size-capped pipes.
 * **Root never enters a customer directory.** The process starts in `/`; only
   after the privilege drop does the customer process change into the
   installation (`cd -P`) and verify that its physical path is exactly the one

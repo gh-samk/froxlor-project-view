@@ -95,6 +95,14 @@ try {
 }
 check('suffix without dot does not count as subdomain', $message !== null, true);
 
+$message = null;
+try {
+	WordpressLogin::link(['id' => 7, 'siteurl' => 'http://www.customer.example/'], $secret, 'admin', ['customer.example']);
+} catch (RuntimeException $e) {
+	$message = $e->getMessage();
+}
+check('plain http refused for autologin', $message !== null && str_contains($message, 'https'), true);
+
 echo "--- must-use plugin\n";
 $plugin = WordpressLogin::muPlugin(7, $public);
 $file = tempnam(sys_get_temp_dir(), 'froxlor-project-view-mu-');

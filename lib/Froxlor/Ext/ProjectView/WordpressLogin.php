@@ -70,6 +70,9 @@ class WordpressLogin
 		if ($parts === null) {
 			throw new RuntimeException(Lang::t('The website address is invalid.'));
 		}
+		if ($parts['scheme'] !== 'https') {
+			throw new RuntimeException(Lang::t('Autologin needs a website address with https, so that the link and the login cookie are not sent unencrypted.'));
+		}
 		self::checkHost($parts['host'], $allowedHosts);
 		$base = rtrim(self::buildSiteUrl($parts), '/');
 

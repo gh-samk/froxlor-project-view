@@ -71,6 +71,10 @@ class WordpressCli
 	private const HOME_BASE = '/var/lib/froxlor-project-view/wpcli';
 
 	/** The only environment customer processes get (plus HOME and WP-CLI variables). */
+	/** Address space (bytes) and largest file a customer process may use. */
+	private const MEMORY_LIMIT = 4294967296;
+	private const FILE_SIZE_LIMIT = 8589934592;
+
 	private const ENVIRONMENT = [
 		'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
 		'LANG=C.UTF-8',
@@ -132,7 +136,7 @@ class WordpressCli
 		if (!function_exists('posix_geteuid') || posix_geteuid() !== 0) {
 			throw new RuntimeException(Lang::t('WordPress jobs only run in the Froxlor cron job as root.'));
 		}
-		foreach (['setpriv', 'timeout', 'bash', 'env', 'head'] as $tool) {
+		foreach (['setpriv', 'prlimit', 'timeout', 'bash', 'env', 'head'] as $tool) {
 			if (!self::exists($tool)) {
 				throw new RuntimeException(Lang::t('The tool “%s” is missing on the server.', $tool));
 			}
@@ -263,6 +267,9 @@ class WordpressCli
 			[
 				'timeout', '--kill-after=30', (string)$seconds,
 				'setpriv', '--reuid=' . $this->uid, '--regid=' . $this->gid, '--clear-groups', '--no-new-privs', '--',
+				// WP-CLI runs the customer's own code outside the FPM pool's limits:
+				// cap memory, CPU time and file size, and forbid core dumps.
+				'prlimit', '--as=' . self::MEMORY_LIMIT, '--cpu=' . $seconds, '--fsize=' . self::FILE_SIZE_LIMIT, '--core=0', '--',
 				'env', '-i',
 			],
 			self::ENVIRONMENT,
