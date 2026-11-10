@@ -30,9 +30,31 @@ if (PHP_SAPI !== 'cli') {
  */
 function pv_read_userdata(string $file): array
 {
-	$code = @file_get_contents($file);
+	// Opened first, then checked through the open handle: a check by path
+	// followed by a read by path could be raced by the panel user (swap in a
+	// link to a root-only file between the two).
+	$lstat = @lstat($file);
+	if ($lstat === false || ($lstat['mode'] & 0170000) !== 0100000) {
+		throw new RuntimeException("$file is not a regular file.");
+	}
+	$fh = @fopen($file, 'rb');
+	if ($fh === false) {
+		throw new RuntimeException("$file is not readable.");
+	}
+	$fstat = fstat($fh);
+	if ($fstat === false || ($fstat['mode'] & 0170000) !== 0100000
+		|| $fstat['dev'] !== $lstat['dev'] || $fstat['ino'] !== $lstat['ino']) {
+		fclose($fh);
+		throw new RuntimeException("$file changed while it was opened.");
+	}
+	// userdata.inc.php is a few hundred bytes; never read more than 64 KB.
+	$code = stream_get_contents($fh, 65537);
+	fclose($fh);
 	if ($code === false) {
 		throw new RuntimeException("$file is not readable.");
+	}
+	if (strlen($code) > 65536) {
+		throw new RuntimeException("$file is larger than 64 KB.");
 	}
 	$tokens = array_values(array_filter(
 		token_get_all($code),
@@ -44,9 +66,12 @@ function pv_read_userdata(string $file): array
 	$peek = static function () use (&$tokens, &$pos) {
 		return $tokens[$pos] ?? null;
 	};
+	// Only the kind of token and its line, never its text: the file may hold
+	// anything (or, after a race, be some other file), and the message is
+	// printed on root's terminal.
 	$fail = static function (string $what) use (&$tokens, &$pos, $file): void {
 		$t = $tokens[$pos] ?? null;
-		$near = is_array($t) ? token_name($t[0]) . ' ' . trim($t[1]) . ' (line ' . $t[2] . ')' : (string)$t;
+		$near = is_array($t) ? token_name($t[0]) . ' (line ' . $t[2] . ')' : ($t === null ? 'end of file' : "'" . substr((string)$t, 0, 1) . "'");
 		throw new RuntimeException("Unsupported content in $file: expected $what near $near.");
 	};
 	$expect = static function (string $char) use (&$tokens, &$pos, $fail): void {
