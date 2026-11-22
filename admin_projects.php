@@ -741,7 +741,7 @@ if ($page == 'overview' || $page == 'projects') {
 	}
 
 	// For the way back from other Froxlor sections and from the customer area
-	// (see lib/navigation/50.ext.projectview.php).
+	// (see lib/navigation/00.ext.projectview.php).
 	CurrentUser::setField('ext_projectview_last_project', [
 		'id' => $id,
 		'name' => (string)($project['domain_ace'] ?: $project['domain']),

@@ -29,6 +29,7 @@ FILES=(
 	"admin_projects.php"
 	"admin_projects_return.php"
 	"actions/admin/settings/190.ext.projectview.php"
+	"lib/navigation/00.ext.projectview.php"
 	"lib/navigation/50.ext.projectview.php"
 	"lib/tablelisting/admin/tablelisting.ext.projectview.php"
 	"lib/Froxlor/Ext/ProjectView"

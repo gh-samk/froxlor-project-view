@@ -3,7 +3,7 @@
 A project-centred admin view for [Froxlor](https://froxlor.org) — for agencies
 and freelancers who think in customer projects, not in resource types.
 
-**Version 1.0.3** · Froxlor 2.3.x (developed against 2.3.13, checked against
+**Version 1.0.4** · Froxlor 2.3.x (developed against 2.3.13, checked against
 2.3.16) · PHP 8.1 or newer · GPL-2.0-or-later
 
 Froxlor arranges resources by type: one list of all domains, one of all email
@@ -56,7 +56,7 @@ This is possible because Froxlor 2.x offers hook points by convention:
 
 | What | How | Where in Froxlor |
 |---|---|---|
-| Menu entry | all `*.php` in `lib/navigation/` are merged, sorted | `lib/init.php` → `PhpHelper::loadConfigArrayDir` |
+| Menu entry | all `*.php` in `lib/navigation/` are merged, sorted (`00.ext` comes before the core menu, so Projects is on top) | `lib/init.php` → `PhpHelper::loadConfigArrayDir` |
 | Settings | all `*.php` in `actions/admin/settings/` are merged | `admin_settings.php` |
 | Column definition | glob over `lib/tablelisting/` and its subdirectories | `lib/Froxlor/UI/Listing.php` |
 | Cron jobs | a row in `cronjobs_run`, class loaded dynamically | `lib/Froxlor/Cli/MasterCron.php` |
@@ -522,7 +522,7 @@ uninstall.sh                                 removal
 admin_projects.php                           overview, project page, write actions
 admin_projects_return.php                    way back from the customer area to the project
 actions/admin/settings/190.ext.projectview.php   settings
-lib/navigation/50.ext.projectview.php        menu entries
+lib/navigation/00.ext.projectview.php        menu entries
 lib/tablelisting/admin/tablelisting.ext.projectview.php   overview columns
 lib/Froxlor/Ext/ProjectView/
   ProjectRepository.php                      reads projects and resources

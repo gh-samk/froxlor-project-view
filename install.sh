@@ -71,7 +71,7 @@ FILES=(
 	"admin_projects.php"
 	"admin_projects_return.php"
 	"actions/admin/settings/190.ext.projectview.php"
-	"lib/navigation/50.ext.projectview.php"
+	"lib/navigation/00.ext.projectview.php"
 	"lib/tablelisting/admin/tablelisting.ext.projectview.php"
 	"lib/Froxlor/Ext/ProjectView/"
 	"templates/ProjectView/"
@@ -171,6 +171,15 @@ for path in "${FILES[@]}"; do
 		| as_owner tar -C "$TARGET" --no-same-owner --no-same-permissions -xf -
 	echo "  $path"
 done
+
+# Before 1.0.4 the menu file was called 50.ext.projectview.php. Left in place it
+# would be merged a second time and break the menu.
+OLD_NAV="lib/navigation/50.ext.projectview.php"
+if [[ $DRY_RUN -eq 0 && ( -e "$TARGET/$OLD_NAV" || -L "$TARGET/$OLD_NAV" ) ]]; then
+	check_path "$(dirname "$OLD_NAV")"
+	as_owner rm -f -- "${TARGET:?}/$OLD_NAV" </dev/null
+	echo "  removed old: $OLD_NAV"
+fi
 
 # Twig caches compiled templates; without clearing, a change would run
 # against the old compiled version. find does not follow symbolic links.

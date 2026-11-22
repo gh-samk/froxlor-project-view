@@ -5,8 +5,9 @@
  *
  * Froxlor merges all *.php files from lib/navigation/, sorted and recursively
  * (PhpHelper::loadConfigArrayDir, called in lib/init.php). This file is
- * therefore purely additive — no Froxlor file needs to be touched. The "50."
- * makes sure the entry is sorted after the core menu (00.froxlor.main.php).
+ * therefore purely additive — no Froxlor file needs to be touched. The
+ * "00.ext" sorts before the core menu (00.froxlor.main.php), so Projects is
+ * the first entry of the menu, above Resources.
  *
  * The file runs on every page load. It uses that for the way back:
  * - In the admin area the most recently opened project is listed in the menu,
