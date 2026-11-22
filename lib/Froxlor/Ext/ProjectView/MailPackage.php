@@ -20,7 +20,8 @@ use PDO;
  * its Apache lines to the subdomain's special settings.
  *
  * - mail.         Name for IMAP, POP3 and SMTP. The certificate reaches
- *                 Postfix and Dovecot via SNI (MailSni). In a browser: redirect to webmail.
+ *                 Postfix and Dovecot via SNI (MailSni, which also serves
+ *                 the main domain and imap./smtp. subdomains with a certificate of their own). In a browser: redirect to webmail.
  * - webmail.      Roundcube from the server's shared installation.
  * - autoconfig.   Thunderbird finds server and ports here.
  * - autodiscover. The same for Outlook.

@@ -16,7 +16,7 @@ use Froxlor\Settings;
  * Three independent steps; if one fails, the others still run:
  * 1. Turn on Let's Encrypt for new subdomains (SubdomainSsl)
  * 2. Create and maintain the mail package (MailPackage)
- * 3. Hand the certificates of the mail. subdomains to Postfix and Dovecot (MailSni)
+ * 3. Hand the certificates of the e-mail domains and their mail./imap./smtp. subdomains to Postfix and Dovecot (MailSni)
  *
  * The certificates themselves are issued by Froxlor's Let's Encrypt cron.
  * Whatever is turned on here therefore gets its certificate in that cron's

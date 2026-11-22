@@ -3,7 +3,7 @@
 A project-centred admin view for [Froxlor](https://froxlor.org) — for agencies
 and freelancers who think in customer projects, not in resource types.
 
-**Version 1.0.2** · Froxlor 2.3.x (developed against 2.3.13, checked against
+**Version 1.0.3** · Froxlor 2.3.x (developed against 2.3.13, checked against
 2.3.16) · PHP 8.1 or newer · GPL-2.0-or-later
 
 Froxlor arranges resources by type: one list of all domains, one of all email
@@ -301,7 +301,8 @@ Here the extension departs from "only new files", in exactly three places:
   (until then, one to five minutes, webmail. is unreachable).
 - Postfix gets `tls_server_sni_maps = hash:/etc/postfix/froxlor-project-view-sni`,
   Dovecot `conf.d/98-froxlor-project-view-sni.conf` with one `local_name`
-  block per mail. subdomain (Dovecot 2.3 syntax, or 2.4 syntax with
+  block per e-mail domain with its own certificate and per mail./imap./smtp.
+  subdomain (Dovecot 2.3 syntax, or 2.4 syntax with
   `ssl_server_cert_file`/`ssl_server_key_file` when Froxlor is configured for
   `dovecot24`). The keys are in `/etc/ssl/froxlor-project-view-mail/`
   (root only). The files are generated from the certificates in Froxlor's
@@ -537,7 +538,7 @@ lib/Froxlor/Ext/ProjectView/
   MailPackage.php                            create mail./webmail./autoconfig./autodiscover.
   MailPackage/autoconfig.php                 autoconfiguration endpoint (Thunderbird, Outlook)
   MailPackage/Autoconfiguration.php          its XML
-  MailSni.php                                certificates of the mail. subdomains for Postfix/Dovecot
+  MailSni.php                                certificates of e-mail domains and their mail./imap./smtp. subdomains for Postfix/Dovecot
   AdminContext.php                           user context for API calls from the cron
   BackupIntegration.php                      optional hook for the Backup extension
   Html.php                                   escaping for messages Froxlor prints raw
