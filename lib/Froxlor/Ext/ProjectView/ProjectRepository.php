@@ -20,6 +20,9 @@ use Froxlor\Settings;
  */
 class ProjectRepository
 {
+	/** Redirect codes offered for domains; Froxlor stores them in redirect_codes. */
+	public const REDIRECT_CODES = ['301', '302', '303', '307'];
+
 	/**
 	 * Cache for the key figures of all visible projects. Filled once per
 	 * request, so the overview list does not query per row.
@@ -132,6 +135,165 @@ class ProjectRepository
 	public static function isUrl(string $target): bool
 	{
 		return (bool)preg_match('#^https?://#i', $target);
+	}
+
+	/**
+	 * Customers the logged-in admin may create domains for.
+	 */
+	public static function listCustomers(): array
+	{
+		[$scopeSql, $scopeParams] = self::adminScope('c');
+
+		$stmt = Database::prepare("
+			SELECT `c`.`customerid` AS `id`, `c`.`loginname`, `c`.`name`, `c`.`firstname`, `c`.`company`
+			FROM `" . TABLE_PANEL_CUSTOMERS . "` `c`
+			WHERE `c`.`deactivated` = '0'
+			" . $scopeSql . "
+			ORDER BY `c`.`loginname` ASC
+		");
+		Database::pexecute($stmt, $scopeParams);
+
+		$customers = [];
+		while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+			$row['customer_label'] = self::customerLabel($row);
+			$customers[] = $row;
+		}
+
+		return $customers;
+	}
+
+	/**
+	 * Main domains that only redirect (documentroot is a URL).
+	 * The redirects of the mail package are subdomains and therefore not listed.
+	 * Like listConvertible(): no alias domains, no standard subdomains.
+	 */
+	public static function listRedirects(): array
+	{
+		return self::listMainDomains("(`d`.`documentroot` LIKE 'http://%' OR `d`.`documentroot` LIKE 'https://%')");
+	}
+
+	/**
+	 * Main domains with web hosting that could be turned into a redirect
+	 * (no email-only domains). alias_count says how many other
+	 * domains use this one as their alias target.
+	 */
+	public static function listConvertible(): array
+	{
+		return self::listMainDomains(
+			"`d`.`documentroot` NOT LIKE 'http://%' AND `d`.`documentroot` NOT LIKE 'https://%'
+			 AND `d`.`email_only` = '0'"
+		);
+	}
+
+	private static function listMainDomains(string $condition): array
+	{
+		[$scopeSql, $scopeParams] = self::adminScope();
+
+		$stmt = Database::prepare("
+			SELECT `d`.`id`, `d`.`domain`, `d`.`domain_ace`, `d`.`documentroot`, `d`.`deactivated`,
+			       `d`.`customerid`, `c`.`loginname`, `c`.`name`, `c`.`firstname`, `c`.`company`,
+			       (SELECT COUNT(*) FROM `" . TABLE_PANEL_DOMAINS . "` `a` WHERE `a`.`aliasdomain` = `d`.`id`) AS `alias_count`
+			FROM `" . TABLE_PANEL_DOMAINS . "` `d`
+			LEFT JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
+			WHERE `d`.`parentdomainid` = '0' AND `d`.`aliasdomain` IS NULL
+			  AND (`c`.`standardsubdomain` IS NULL OR `c`.`standardsubdomain` <> `d`.`id`)
+			  AND " . $condition . "
+			" . $scopeSql . "
+			ORDER BY `d`.`domain_ace` ASC
+		");
+		Database::pexecute($stmt, $scopeParams);
+
+		$rows = [];
+		while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+			$row['customer_label'] = self::customerLabel($row);
+			$rows[] = $row;
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * Brings a redirect target into the form Froxlor expects, or null if it is
+	 * unusable ($problem then says why: format, query, path or host).
+	 *
+	 * Froxlor writes the target unquoted into the Apache vhost as
+	 * "RewriteRule ^/(.*) <target>$1". Therefore: no whitespace, control
+	 * characters, quotes, "$", ";", braces, "%", "@" or backslash anywhere;
+	 * non-ASCII only in the host name, never in the path (Domains::add/update
+	 * encode the host of the URL with IdnaWrapper::encode, checked in 2.3.17);
+	 * no query or fragment (Froxlor appends the path itself); a port only as
+	 * ":digits"; no private or reserved IP address, no localhost, no numeric or
+	 * hex "host" that a resolver would read as an IP; and a trailing "/" so the
+	 * appended path does not glue onto the host.
+	 *
+	 * Without keepPath a trailing "?" turns the appended path into the query of
+	 * the target, so every request lands on the target itself.
+	 */
+	public static function redirectTarget(string $url, bool $keepPath, ?string &$problem = null): ?string
+	{
+		$problem = 'format';
+		$url = rtrim(trim($url), '?');
+		[$host, $path] = self::splitUrl($url);
+		if ($host === null || self::unsafeUrlPart($host, $path)) {
+			return null;
+		}
+		if (preg_match('#[^\x21-\x7E]#', $path)) {
+			$problem = 'path';
+			return null;
+		}
+		if (str_contains($url, '?') || str_contains($url, '#')) {
+			$problem = 'query';
+			return null;
+		}
+		if (preg_match('#^\[([^\]]+)\](?::\d{1,5})?\z#', $host, $h)) {
+			$name = $h[1];
+			if (filter_var($name, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false) {
+				return null;
+			}
+		} elseif (substr_count($host, ':') > 1 || !preg_match('#^([^:]+)(?::\d{1,5})?\z#', $host, $h)) {
+			// Unbracketed IPv6 ("https://::1/") or a port that is not digits.
+			$problem = substr_count($host, ':') > 1 ? 'host' : 'format';
+			return null;
+		} else {
+			$name = rtrim($h[1], '.');
+		}
+		$labels = explode('.', strtolower($name));
+		$isIp = filter_var($name, FILTER_VALIDATE_IP) !== false;
+		$long = $isIp ? ip2long($name) : false;
+		if ($name === '' || ($isIp
+			? (filter_var($name, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false
+				// 100.64.0.0/10 (carrier-grade NAT) is neither private nor reserved for PHP.
+				|| ($long !== false && ($long & 0xFFC00000) === 0x64400000))
+			: ($labels[0] === 'localhost' || end($labels) === 'localhost'
+				|| preg_match('#^(0x[0-9a-f]*|\d+)\z#', end($labels))))) {
+			$problem = 'host';
+			return null;
+		}
+
+		$target = $keepPath
+			? (str_ends_with($url, '/') ? $url : $url . '/')
+			: (substr_count($url, '/') < 3 ? $url . '/' : $url) . '?';
+		// Check the finished value once more: what is returned is what is written.
+		[$host, $path] = self::splitUrl(rtrim($target, '?'));
+		if ($host === null || self::unsafeUrlPart($host, $path) || preg_match('#[^\x21-\x7E]#', $path)) {
+			return null;
+		}
+		$problem = null;
+
+		return $target;
+	}
+
+	/** Host (with port) and path of an http(s) URL, or [null, ''] if it is none. "\z", not "$": "$" lets a trailing line break pass. */
+	private static function splitUrl(string $url): array
+	{
+		return preg_match('#^https?://([^/]+)(/.*)?\z#is', $url, $m) ? [$m[1], $m[2] ?? ''] : [null, ''];
+	}
+
+	private static function unsafeUrlPart(string $host, string $path): bool
+	{
+		$forbidden = '#[\x00-\x20\x7F"\'`\\\\$<>{}%;@]#';
+
+		return (bool)preg_match($forbidden, $host) || (bool)preg_match($forbidden, $path);
 	}
 
 	/**

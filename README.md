@@ -3,7 +3,7 @@
 A project-centred admin view for [Froxlor](https://froxlor.org) — for agencies
 and freelancers who think in customer projects, not in resource types.
 
-**Version 1.0.4** · Froxlor 2.3.x (developed against 2.3.13, checked against
+**Version 1.1.0** · Froxlor 2.3.x (developed against 2.3.13, checked against
 2.3.16) · PHP 8.1 or newer · GPL-2.0-or-later
 
 Froxlor arranges resources by type: one list of all domains, one of all email
@@ -34,6 +34,7 @@ Bootstrap's CSS variables and follow the light and dark variants.
 - [Update](#update)
 - [Uninstall](#uninstall)
 - [Configuration](#configuration)
+- [Redirects](#redirects)
 - [WordPress: updates, autologin, integrity check](#wordpress-updates-autologin-integrity-check)
 - [Certificates for subdomains and the mail package](#certificates-for-subdomains-and-the-mail-package)
 - [Backup box (optional)](#backup-box-optional)
@@ -176,6 +177,54 @@ Settings › **Project View**:
 | PHP-FPM socket for Roundcube | empty | Socket of the PHP-FPM pool Roundcube runs in. Without it the mail package only creates mail. |
 
 All settings are stored in `panel_settings` with the group `ext_projectview`.
+
+## Redirects
+
+Menu **Projects › Redirects** (`admin_projects.php?page=redirects`). In Froxlor
+a main domain becomes a pure redirect (no web hosting) when its document root is
+a URL. This page does that in one step, without the long domain form.
+
+**Create a redirect.** Customer (only those the admin may see), domain, target
+address (`http://` or `https://`), code (301 default, 302, 303, 307) and
+switches: also `www.` (on), Let's Encrypt (on; only offered if SSL is enabled
+system-wide and an SSL-capable default IP exists), email at the domain (off).
+The domain is created with `Domains::add` — no PHP, no open_basedir; quotas and
+rights are checked by Froxlor.
+
+**Path.** Froxlor writes the redirect as `RewriteRule ^/(.*) <target>$1`, so
+the path of the old address is appended to the target by default
+(`alt.de/page` → `target/page`). With the switch *Append the path* off (the
+default here) the target gets a trailing `?`: the old path then ends up as the
+query string and every request lands on the target itself. Either way a target with its own `?` or `#` is refused, as are
+whitespace, quotes and `$ ; { } % @`, non-ASCII characters in the path (only
+the host name may have umlauts), and private or reserved IP addresses and
+`localhost`. A redirect created in Froxlor with such a target can still get
+a new code here as long as the target field is left unchanged.
+
+**List.** All main domains with a URL document root, with customer, target and
+code. Target and code can be changed per row; only changed values are sent to
+Froxlor. The `webmail.`/`mail.` subdomains of the mail package are not listed.
+
+**Turn a domain with web hosting into a redirect.** The second list shows main
+domains with a normal document root (no alias domains, no email-only domains).
+The button leads to a confirmation page that counts what hangs on the domain
+(subdomains, WordPress installations, databases, FTP accounts, email
+addresses, alias domains) and says clearly what happens: the domain then only delivers the redirect (no web hosting vhost any more, the website is no longer served under it; the domain's own PHP setting is not changed);
+**nothing is deleted** — Froxlor does not remove files, and databases, FTP and
+email accounts stay. The email setting of the domain is not touched, existing
+mailboxes keep working; subdomains stay and keep their own hosting. The
+conversion needs the domain name typed as confirmation.
+
+Needs a Froxlor whose `Domains` command accepts a URL as document root of a
+main domain: 2.3.17 does, 2.3.13 refuses it ("The value for the field
+documentroot is not in the expected format").
+
+Writes go through `Domains::add` / `Domains::update`. The one exception is the
+redirect code: those commands have no parameter for it, so it is stored with
+Froxlor's own `Domain::updateRedirectOfDomain()` (the function `SubDomains`
+uses) and the vhost rebuild is requested explicitly. `phpenabled` is not sent
+on updates: `Domains::update` copies it to all subdomains of the domain, so
+leaving it out only prevents a change — existing values stay.
 
 ## WordPress: updates, autologin, integrity check
 
@@ -519,7 +568,7 @@ complete rewrite (Laravel) that this extension does not target.
 install.sh                                   installation and update
 scripts/privileges.sh                        dropping root privileges safely (used by both scripts)
 uninstall.sh                                 removal
-admin_projects.php                           overview, project page, write actions
+admin_projects.php                           overview, project page, redirects, write actions
 admin_projects_return.php                    way back from the customer area to the project
 actions/admin/settings/190.ext.projectview.php   settings
 lib/navigation/00.ext.projectview.php        menu entries

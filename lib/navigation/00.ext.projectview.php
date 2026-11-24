@@ -50,6 +50,11 @@ $ext_projectview_elements = [
 		'required_resources' => 'domains',
 	],
 	[
+		'url' => 'admin_projects.php?page=redirects',
+		'label' => Lang::t('Redirects'),
+		'required_resources' => 'domains',
+	],
+	[
 		'url' => 'admin_projects.php?page=unassigned',
 		'label' => Lang::t('Unassigned'),
 		'required_resources' => 'domains',

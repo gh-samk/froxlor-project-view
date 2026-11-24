@@ -1,0 +1,238 @@
+{% extends "Froxlor/userarea.html.twig" %}
+{% import "ProjectView/box.html.twig" as k %}
+
+{# Hidden mandatory fields of every form on this page. #}
+{% macro form_header(csrf, action, id) %}
+	<input type="hidden" name="csrf_token" value="{{ csrf }}">
+	<input type="hidden" name="page" value="redirects">
+	<input type="hidden" name="action" value="{{ action }}">
+	<input type="hidden" name="send" value="send">
+	{% if id %}<input type="hidden" name="id" value="{{ id }}">{% endif %}
+{% endmacro %}
+
+{# Target, code and path switch — the same three fields in all forms. #}
+{% macro fields(fid, target, code, codes, keep) %}
+	<div class="row g-2 align-items-end">
+		<div class="col-lg-8">
+			<label class="form-label small mb-1" for="{{ fid }}-target">{{ pv_t('Target address') }}</label>
+			<input type="text" class="form-control form-control-sm font-monospace" id="{{ fid }}-target" name="target"
+			       value="{{ target }}" placeholder="https://" inputmode="url" autocapitalize="off" spellcheck="false" required>
+		</div>
+		<div class="col-lg-4">
+			<label class="form-label small mb-1" for="{{ fid }}-code">{{ pv_t('Redirect code') }}</label>
+			<select class="form-select form-select-sm" id="{{ fid }}-code" name="code">
+				{% for c in codes %}
+					<option value="{{ c }}" {{ c == code ? 'selected' }}>{{ c }}{{ c == '301' ? ' — ' ~ pv_t('permanent') : (c == '302' ? ' — ' ~ pv_t('temporary') : '') }}</option>
+				{% endfor %}
+			</select>
+		</div>
+	</div>
+	<div class="mt-2">
+		{{ _self.keep_path(fid, keep) }}
+	</div>
+{% endmacro %}
+
+{% macro keep_path(fid, on) %}
+	<div class="form-check form-switch">
+		<input class="form-check-input" type="checkbox" role="switch" name="keeppath" value="1" id="{{ fid }}-keep" {{ on ? 'checked' }}>
+		<label class="form-check-label small" for="{{ fid }}-keep">{{ pv_t('Append the path of the old address (alt.de/page becomes target/page)') }}</label>
+	</div>
+{% endmacro %}
+
+{% block heading %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	<h5 class="mb-1">
+		<i class="fa-solid fa-share me-1" aria-hidden="true"></i>{{ pv_t('Redirects') }}
+		<small><span class="badge rounded-pill bg-secondary">{{ redirects|length }}</span></small>
+	</h5>
+	<span class="d-block text-body-secondary mt-2">{{ pv_t('Main domains that only forward to another address.') }}</span>
+</div>
+{% endblock %}
+
+{% block actions %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	<a class="btn btn-outline-secondary" href="{{ linker({'section': 'projects', 'page': 'overview'}) }}">
+		<i class="fa-solid fa-reply" aria-hidden="true"></i>
+		<span class="d-none d-lg-inline ms-lg-1">{{ pv_t('All projects') }}</span>
+	</a>
+</div>
+{% endblock %}
+
+{% block content %}
+{# v-pre: Froxlor mounts Vue on <body id="app"> and thereby evaluates the whole page as a template. Without v-pre, text like {{ ... }} from customer descriptions would run as code in the admin's browser. #}
+<div v-pre>
+	{% include "ProjectView/style.html.twig" %}
+
+	{% if flash %}
+		<div class="alert alert-{{ flash.type == 'success' ? 'success' : 'warning' }} alert-dismissible fade show d-flex align-items-center gap-2" role="status">
+			<i class="fa-solid {{ flash.type == 'success' ? 'fa-circle-check' : 'fa-circle-info' }}" aria-hidden="true"></i>
+			<div>{{ flash.text }}</div>
+			<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{{ pv_t('Close message') }}"></button>
+		</div>
+	{% endif %}
+
+	{% if confirm %}
+		{# ------------------------------------------------------------- #}
+		{# Confirmation before a domain with web hosting becomes a redirect #}
+		{% set name = confirm.domain.domain_ace ?: confirm.domain.domain %}
+		<section class="card border-danger mb-4">
+			<div class="card-header bg-danger-subtle fw-semibold text-danger-emphasis">
+				<i class="fa-solid fa-triangle-exclamation me-2" aria-hidden="true"></i>{{ pv_t('Turn %s into a redirect?', name) }}
+			</div>
+			<div class="card-body">
+				<p>{{ pv_t('%s will only deliver the redirect from now on: there is no web hosting vhost for it any more, so the website is no longer served under this domain. The PHP setting of the domain itself is not changed.', name) }}</p>
+				<p>
+					<strong>{{ pv_t('Nothing is deleted.') }}</strong>
+					{{ pv_t('Froxlor does not delete any files: the website files stay on the disk, as do databases, FTP accounts and email accounts. Existing mailboxes keep working; the email setting of the domain is not changed.') }}
+				</p>
+				<p class="mb-1 fw-semibold">{{ pv_t('Attached to this domain:') }}</p>
+				<ul>
+					<li>{{ pv_t('Subdomains (including mail package): %d', confirm.subdomains|length) }}{% if confirm.subdomains|length > 0 %} — {{ pv_t('they stay and keep their own hosting') }}: {% for s in confirm.subdomains %}{{ s.domain_ace ?: s.domain }}{{ loop.last ? '' : ', ' }}{% endfor %}{% endif %}</li>
+					<li>{{ pv_t('WordPress installations: %d', confirm.wordpress|length) }}{% if confirm.wordpress|length > 0 %} — {{ pv_t('they stop being reachable under this domain') }}: {% for w in confirm.wordpress %}<code>{{ w.path }}</code>{{ loop.last ? '' : ', ' }}{% endfor %}{% endif %}</li>
+					<li>{{ pv_t('Databases assigned to the project: %d', confirm.stats.databases) }}</li>
+					<li>{{ pv_t('FTP accounts assigned to the project: %d', confirm.stats.ftps) }}</li>
+					<li>{{ pv_t('Email addresses: %d', confirm.stats.emails) }}</li>
+					{% if confirm.domain.alias_count > 0 %}
+						<li>{{ pv_t('Alias domains pointing to this domain, which lose their target: %d', confirm.domain.alias_count) }}</li>
+					{% endif %}
+				</ul>
+				<form method="post" class="pv-form">
+					{{ _self.form_header(csrf_token, 'convert', confirm.domain.id) }}
+					{{ _self.fields('convert', '', '301', codes, false) }}
+					{% set pattern = confirm.domain.domain|replace({'\\': '\\\\', '.': '\\.', '+': '\\+', '*': '\\*', '?': '\\?', '(': '\\(', ')': '\\)', '[': '\\[', ']': '\\]', '{': '\\{', '}': '\\}', '|': '\\|', '^': '\\^', '$': '\\$', '/': '\\/'}) %}
+					<div class="pv-danger">
+						<label class="form-label small mb-1" for="convert-confirmation">
+							{{ pv_t('To confirm, type %s', '<strong class="user-select-all">' ~ confirm.domain.domain|e ~ '</strong>')|raw }}
+						</label>
+						<div class="d-flex gap-2 flex-wrap pv-actions">
+							<input type="text" class="form-control form-control-sm flex-grow-1 w-auto" style="max-width:28rem" id="convert-confirmation" name="confirmation"
+							       autocomplete="off" spellcheck="false" required placeholder=" "
+							       pattern="{{ pattern }}" title="{{ pv_t('Please type exactly %s', confirm.domain.domain) }}">
+							<button type="submit" class="btn btn-sm btn-danger text-nowrap">{{ pv_t('Turn into redirect') }}</button>
+							<a class="btn btn-sm btn-outline-secondary" href="{{ linker({'section': 'projects', 'page': 'redirects'}) }}">{{ pv_t('Cancel') }}</a>
+						</div>
+					</div>
+				</form>
+			</div>
+		</section>
+	{% else %}
+
+	{# ----------------------------------------------------------------- #}
+	{# New redirect #}
+	<section class="card mb-4">
+		<div class="card-header bg-body-tertiary fw-semibold">
+			<i class="fa-solid fa-plus me-2 text-body-secondary" aria-hidden="true"></i>{{ pv_t('New redirect') }}
+		</div>
+		<div class="card-body">
+			{% if customers|length == 0 %}
+				<span class="text-body-secondary small">{{ pv_t('There is no customer to create a domain for.') }}</span>
+			{% else %}
+				<form method="post" class="pv-form">
+					{{ _self.form_header(csrf_token, 'add') }}
+					<div class="row g-2 mb-2">
+						<div class="col-md-6">
+							<label class="form-label small mb-1" for="new-customer">{{ pv_t('Customer') }}</label>
+							<select class="form-select form-select-sm" id="new-customer" name="customerid" required>
+								{% for c in customers %}
+									<option value="{{ c.id }}">{{ c.customer_label }} ({{ c.loginname }})</option>
+								{% endfor %}
+							</select>
+						</div>
+						<div class="col-md-6">
+							<label class="form-label small mb-1" for="new-domain">{{ pv_t('Domain') }}</label>
+							<input type="text" class="form-control form-control-sm" id="new-domain" name="domain" placeholder="alt.de" inputmode="text" autocapitalize="off" spellcheck="false" required>
+						</div>
+					</div>
+					{{ _self.fields('new', '', '301', codes, false) }}
+					<div class="mt-2">
+						{{ k.toggle('www', 'new-www', true, pv_t('Also redirect www.')) }}
+						{% if opt.ssl %}
+							{{ k.toggle('letsencrypt', 'new-le', true, pv_t('Let\'s Encrypt certificate')) }}
+						{% endif %}
+						{{ k.toggle('isemaildomain', 'new-mail', false, pv_t('Email at this domain')) }}
+					</div>
+					<div class="d-flex align-items-center gap-2 flex-wrap mt-3 pv-actions">
+						<button type="submit" class="btn btn-sm btn-primary">{{ pv_t('Create redirect') }}</button>
+						{{ k.delayed() }}
+					</div>
+				</form>
+			{% endif %}
+		</div>
+	</section>
+
+	{# ----------------------------------------------------------------- #}
+	{# Existing redirects #}
+	<section class="card mb-4">
+		<div class="card-header bg-body-tertiary fw-semibold">
+			<i class="fa-solid fa-share me-2 text-body-secondary" aria-hidden="true"></i>{{ pv_t('Redirects') }}
+			<span class="badge rounded-pill bg-secondary ms-1">{{ redirects|length }}</span>
+		</div>
+		<div class="list-group list-group-flush">
+			{% for r in redirects %}
+				{% set rname = r.domain_ace ?: r.domain %}
+				<div class="list-group-item">
+					<div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+						<div class="min-w-0 flex-grow-1">
+							<div class="fw-medium text-break">
+								{{ rname }}
+								{% if r.deactivated %}<span class="badge text-bg-secondary ms-1">{{ pv_t('deactivated') }}</span>{% endif %}
+							</div>
+							<div class="small text-body-secondary text-break">
+								{{ r.customer_label }} · <i class="fa-solid fa-share me-1" aria-hidden="true"></i>{{ r.target }}
+								· {{ r.code }}{% if r.no_path %} · {{ pv_t('without path') }}{% endif %}
+							</div>
+						</div>
+						<div class="flex-shrink-0 pv-actions"><button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse"
+						        data-bs-target="#redirect-{{ r.id }}" aria-expanded="false" aria-controls="redirect-{{ r.id }}"
+						        title="{{ pv_t('Edit') }}" aria-label="{{ pv_t('Edit %s', rname) }}">
+							<i class="fa-solid fa-pen" aria-hidden="true"></i>
+						</button></div>
+					</div>
+					<div class="collapse" id="redirect-{{ r.id }}">
+						<div class="pv-inset">
+							<form method="post" class="pv-form">
+								{{ _self.form_header(csrf_token, 'update', r.id) }}
+								{{ _self.fields('redirect-' ~ r.id, r.target, r.code, codes, not r.no_path) }}
+								<div class="d-flex align-items-center gap-2 flex-wrap mt-2 pv-actions">
+									<button type="submit" class="btn btn-sm btn-primary">{{ pv_t('Save') }}</button>
+									{{ k.delayed() }}
+								</div>
+							</form>
+						</div>
+					</div>
+				</div>
+			{% else %}
+				{{ k.empty(pv_t('There are no redirects yet.')) }}
+			{% endfor %}
+		</div>
+	</section>
+
+	{# ----------------------------------------------------------------- #}
+	{# Domains with web hosting #}
+	<section class="card">
+		<div class="card-header bg-body-tertiary fw-semibold">
+			<i class="fa-solid fa-globe me-2 text-body-secondary" aria-hidden="true"></i>{{ pv_t('Turn a domain with web hosting into a redirect') }}
+			<span class="badge rounded-pill bg-secondary ms-1">{{ convertible|length }}</span>
+		</div>
+		<div class="list-group list-group-flush">
+			{% for d in convertible %}
+				<div class="list-group-item d-flex justify-content-between align-items-center gap-2 flex-wrap">
+					<div class="min-w-0 flex-grow-1">
+						<span class="fw-medium text-break">{{ d.domain_ace ?: d.domain }}</span>
+						<span class="small text-body-secondary ms-1">{{ d.customer_label }}</span>
+					</div>
+					<div class="flex-shrink-0 pv-actions"><a class="btn btn-sm btn-outline-danger text-nowrap" href="{{ linker({'section': 'projects', 'page': 'redirects', 'action': 'convert', 'id': d.id}) }}">
+						{{ pv_t('Turn into redirect') }}…
+					</a></div>
+				</div>
+			{% else %}
+				{{ k.empty(pv_t('No domain with web hosting.')) }}
+			{% endfor %}
+		</div>
+	</section>
+
+	{% endif %}
+</div>
+{% endblock %}

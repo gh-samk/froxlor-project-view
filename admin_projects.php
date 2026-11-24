@@ -28,6 +28,8 @@ use Froxlor\Api\Commands\Ftps;
 use Froxlor\Api\Commands\Mysqls;
 use Froxlor\Api\Commands\SubDomains;
 use Froxlor\CurrentUser;
+use Froxlor\Cron\TaskId;
+use Froxlor\Domain\Domain;
 use Froxlor\Ext\ProjectView\Html;
 use Froxlor\Ext\ProjectView\Lang;
 use Froxlor\Ext\ProjectView\MailPackage;
@@ -40,6 +42,7 @@ use Froxlor\Ext\ProjectView\WordpressJobs;
 use Froxlor\Ext\ProjectView\WordpressLogin;
 use Froxlor\FroxlorLogger;
 use Froxlor\Settings;
+use Froxlor\System\Cronjob;
 use Froxlor\UI\Listing;
 use Froxlor\UI\Panel\UI;
 use Froxlor\UI\Request;
@@ -131,14 +134,14 @@ function pv_command(callable $fn, array $redirect, ?string $flash = null): void
  * any command runs — and the name for the delete confirmation comes from the
  * database, never from the form.
  */
-function pv_find(array $list, int $rid, string $what): array
+function pv_find(array $list, int $rid, string $what, ?string $message = null): array
 {
 	foreach ($list as $entry) {
 		if ((int)$entry['id'] === $rid) {
 			return $entry;
 		}
 	}
-	pv_error(Lang::t('%s does not belong to this project.', $what));
+	pv_error($message ?? Lang::t('%s does not belong to this project.', $what));
 	exit;
 }
 
@@ -192,6 +195,54 @@ function pv_backup(array $project): ?array
 function pv_switch(string $field): int
 {
 	return Request::post($field) === '1' ? 1 : 0;
+}
+
+/**
+ * The redirect target from the form, in the form Froxlor expects (see
+ * ProjectRepository::redirectTarget). Everything else is rejected.
+ */
+function pv_redirect_target(): string
+{
+	$target = ProjectRepository::redirectTarget((string)Request::post('target'), pv_switch('keeppath') === 1, $problem);
+	if ($target === null) {
+		pv_error(match ($problem) {
+			'query' => Lang::t('The target must not contain "?" or "#". Froxlor appends the path of the old address itself.'),
+			'path' => Lang::t('Special characters in the path are not allowed. Please use a target page without umlauts or spaces; only the host name may contain them.'),
+			'host' => Lang::t('Private or reserved addresses (such as 127.0.0.1 or 192.168.x.x) and localhost are not allowed as target.'),
+			default => Lang::t('The target must be a complete address starting with http:// or https://, without spaces, quotes or characters like @ $ ; % { } < >.'),
+		});
+	}
+
+	return $target;
+}
+
+/**
+ * Froxlor row ID of a redirect code from the form. Domains::add/update have no
+ * parameter for the code; Froxlor stores it in domain_redirect_codes and
+ * reads it when it writes the vhost.
+ */
+function pv_redirect_code_id(): int
+{
+	$code = (string)Request::post('code', '301');
+	if (in_array($code, ProjectRepository::REDIRECT_CODES, true)) {
+		foreach (Domain::getRedirectCodesArray() as $row) {
+			if ((string)$row['code'] === $code) {
+				return (int)$row['id'];
+			}
+		}
+	}
+	pv_error(Lang::t('This redirect code is not available.'));
+	exit;
+}
+
+/**
+ * Sets the redirect code. Domains::update only rebuilds the vhost when one of
+ * its own fields changed, so a change of the code alone needs the task itself.
+ */
+function pv_set_redirect_code(int $domainid, int $codeid): void
+{
+	Domain::updateRedirectOfDomain($domainid, $codeid);
+	Cronjob::inserttask(TaskId::REBUILD_VHOST);
 }
 
 /**
@@ -306,6 +357,129 @@ if ($page == 'overview' || $page == 'projects') {
 	pv_view('unassigned.html.twig', [
 		'databases' => ResourceMapper::unassignedDatabases(),
 		'ftps' => ResourceMapper::unassignedFtps(),
+	]);
+
+/*
+ * Redirects: domains that only forward to another address.
+ *
+ * Froxlor makes a main domain a pure redirect when its document root is a
+ * URL. Domains::add/update take it as "documentroot"; the code (301/302/303/
+ * 307) is stored separately and has no command parameter (see pv_set_redirect_code).
+ */
+} elseif ($page == 'redirects') {
+
+	$customers = ProjectRepository::listCustomers();
+	$redirects = ProjectRepository::listRedirects();
+	$convertible = ProjectRepository::listConvertible();
+	$toRedirects = ['page' => 'redirects'];
+	// Froxlor only turns SSL on when it is enabled system-wide and an SSL-capable
+	// default IP exists (otherwise it refuses or silently drops Let's Encrypt).
+	$sslPossible = (int)Settings::Get('system.use_ssl') === 1 && trim((string)Settings::Get('system.defaultsslip')) !== '';
+	$confirm = null;
+	$notAvailable = Lang::t('This domain is not available.');
+
+	if ($action == 'add' && Request::post('send') == 'send') {
+		$customer = pv_find($customers, (int)Request::post('customerid'), Lang::t('This customer'), Lang::t('This customer is not available.'));
+		$domain = trim((string)Request::post('domain'));
+		$target = pv_redirect_target();
+		$codeId = pv_redirect_code_id();
+		$letsencrypt = $sslPossible ? pv_switch('letsencrypt') : 0;
+		pv_command(function () use ($userinfo, $customer, $domain, $target, $codeId, $sslPossible, $letsencrypt) {
+			$result = Domains::getLocal($userinfo, [
+				'customerid' => (int)$customer['id'],
+				'domain' => $domain,
+				'documentroot' => $target,
+				// A redirect needs neither PHP nor openbasedir.
+				'phpenabled' => 0,
+				'openbasedir' => 0,
+				'isemaildomain' => pv_switch('isemaildomain'),
+				'selectserveralias' => pv_switch('www') ? 1 : 2,
+				'sslenabled' => (int)$sslPossible,
+				'letsencrypt' => $letsencrypt,
+			])->add();
+			$newId = (int)(json_decode($result, true)['data']['id'] ?? 0);
+			if ($newId > 0) {
+				pv_set_redirect_code($newId, $codeId);
+			}
+			// The domain exists now: a missing certificate setting is a notice,
+			// not an error page (unlike pv_check_ssl).
+			$after = $newId > 0 ? ProjectRepository::getProject($newId) : null;
+			if ($newId === 0) {
+				pv_flash(Lang::t('Redirect created, but its ID could not be read, so the redirect code was not set. Please check it in the list.'), 'warning');
+			} elseif ($letsencrypt === 1 && $after !== null && (int)$after['letsencrypt'] !== 1) {
+				pv_flash(Lang::t('Redirect created, but Let\'s Encrypt could not be set. Check it under "All domain settings".'), 'warning');
+			} else {
+				pv_flash(Lang::t('Redirect created. It becomes active on the next cron run.'));
+			}
+		}, $toRedirects);
+
+	} elseif ($action == 'update' && Request::post('send') == 'send') {
+		$redirect = pv_find($redirects, $id, Lang::t('This redirect'), $notAvailable);
+		// Unchanged target: no new validation, so redirects created in Froxlor
+		// (possibly with a "?" in the target) can still get a new code here.
+		$posted = trim((string)Request::post('target'));
+		$unchanged = $posted === rtrim((string)$redirect['documentroot'], '?')
+			&& (pv_switch('keeppath') === 1) === !str_ends_with((string)$redirect['documentroot'], '?');
+		$target = $unchanged ? (string)$redirect['documentroot'] : pv_redirect_target();
+		$codeId = pv_redirect_code_id();
+		$codeChanged = $codeId !== (int)Domain::getDomainRedirectId($id);
+		$targetChanged = $target !== $redirect['documentroot'];
+		pv_command(function () use ($userinfo, $id, $target, $codeId, $targetChanged, $codeChanged) {
+			if ($targetChanged) {
+				// Only the changed parameter: everything else keeps its value.
+				Domains::getLocal($userinfo, ['id' => $id, 'documentroot' => $target])->update();
+				MailPackage::maintainForDomain($id);
+			}
+			if ($codeChanged) {
+				pv_set_redirect_code($id, $codeId);
+			}
+		}, $toRedirects, ($targetChanged || $codeChanged)
+			? Lang::t('Redirect saved. It takes effect on the next cron run.')
+			: Lang::t('Nothing changed.'));
+
+	} elseif ($action == 'convert') {
+		$domain = pv_find($convertible, $id, Lang::t('This domain'), $notAvailable);
+		if (Request::post('send') == 'send') {
+			pv_confirmed((string)$domain['domain']);
+			$target = pv_redirect_target();
+			$codeId = pv_redirect_code_id();
+			// phpenabled is left out on purpose: Domains::update copies it (and
+			// openbasedir) of the main domain to ALL its subdomains. Not passing it
+			// only prevents a change; the existing values stay. The redirect vhost
+			// does not use PHP anyway.
+			pv_command(function () use ($userinfo, $id, $target, $codeId) {
+				Domains::getLocal($userinfo, ['id' => $id, 'documentroot' => $target])->update();
+				pv_set_redirect_code($id, $codeId);
+				MailPackage::maintainForDomain($id);
+			}, $toRedirects, Lang::t('%s is now a redirect. It takes effect on the next cron run. The files stay on the disk.', $domain['domain']));
+		}
+		// What the customer would lose from the web hosting, for the confirmation.
+		$confirm = [
+			'domain' => $domain,
+			'stats' => ProjectRepository::aggregateFor($id),
+			'subdomains' => ProjectRepository::getSubdomains($id),
+			'wordpress' => ProjectRepository::getWordpress($id),
+		];
+	}
+
+	$flash = CurrentUser::getField('ext_projectview_flash');
+	CurrentUser::setField('ext_projectview_flash', null);
+
+	foreach ($redirects as &$redirect) {
+		$redirect['code'] = Domain::getDomainRedirectCode((int)$redirect['id']);
+		$redirect['no_path'] = str_ends_with((string)$redirect['documentroot'], '?');
+		$redirect['target'] = rtrim((string)$redirect['documentroot'], '?');
+	}
+	unset($redirect);
+
+	pv_view('redirects.html.twig', [
+		'confirm' => $confirm,
+		'customers' => $customers,
+		'redirects' => $redirects,
+		'convertible' => $convertible,
+		'codes' => ProjectRepository::REDIRECT_CODES,
+		'flash' => is_array($flash) ? $flash : null,
+		'opt' => ['ssl' => $sslPossible],
 	]);
 
 /*
