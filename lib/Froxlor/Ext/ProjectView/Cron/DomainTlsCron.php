@@ -57,7 +57,7 @@ class DomainTlsCron extends FroxlorCron
 			$c = MailPackage::run();
 			if ($c['created'] + $c['maintained'] + $c['failed'] > 0) {
 				$log(LOG_NOTICE, sprintf(
-					'Mail package - %d subdomains created, %d vhost settings renewed, %d errors',
+					'Mail package - %d domains created, %d vhost settings renewed, %d errors',
 					$c['created'], $c['maintained'], $c['failed']
 				));
 			}

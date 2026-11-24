@@ -70,7 +70,9 @@ class MailSni
 	/**
 	 * Certificates of the main domains marked as e-mail domains and of their
 	 * mail./imap./smtp. subdomains. Any with their own certificate, whether
-	 * the mail package or someone else created them.
+	 * the mail package or someone else created them. For "e-mail only"
+	 * domains (no subdomains possible) these are main domains of the same
+	 * customer with that name.
 	 */
 	public static function certificates(): array
 	{
@@ -79,9 +81,13 @@ class MailSni
 			       `z`.`ssl_cert_chainfile`, `z`.`ssl_fullchain_file`
 			FROM `" . TABLE_PANEL_DOMAINS . "` `s`
 			LEFT JOIN `" . TABLE_PANEL_DOMAINS . "` `p` ON `p`.`id` = `s`.`parentdomainid`
+			LEFT JOIN `" . TABLE_PANEL_DOMAINS . "` `e` ON `s`.`parentdomainid` = 0 AND `e`.`parentdomainid` = 0
+			    AND `e`.`email_only` = 1 AND `e`.`isemaildomain` = 1 AND `e`.`deactivated` = 0 AND `e`.`customerid` = `s`.`customerid`
+			    AND `s`.`domain` IN (CONCAT('mail.', `e`.`domain`), CONCAT('imap.', `e`.`domain`), CONCAT('smtp.', `e`.`domain`))
 			JOIN `" . TABLE_PANEL_DOMAIN_SSL_SETTINGS . "` `z` ON `z`.`domainid` = `s`.`id`
 			WHERE ((`s`.`parentdomainid` = 0 AND `s`.`isemaildomain` = 1)
-			    OR (`p`.`isemaildomain` = 1 AND `p`.`deactivated` = 0 AND `s`.`domain` IN (CONCAT('mail.', `p`.`domain`), CONCAT('imap.', `p`.`domain`), CONCAT('smtp.', `p`.`domain`))))
+			    OR (`p`.`isemaildomain` = 1 AND `p`.`deactivated` = 0 AND `s`.`domain` IN (CONCAT('mail.', `p`.`domain`), CONCAT('imap.', `p`.`domain`), CONCAT('smtp.', `p`.`domain`)))
+			    OR `e`.`id` IS NOT NULL)
 			  AND `s`.`deactivated` = 0
 			  AND `z`.`ssl_cert_file` <> ''
 			  AND `z`.`ssl_key_file` <> ''

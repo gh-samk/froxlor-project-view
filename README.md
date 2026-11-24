@@ -3,7 +3,7 @@
 A project-centred admin view for [Froxlor](https://froxlor.org) — for agencies
 and freelancers who think in customer projects, not in resource types.
 
-**Version 1.1.0** · Froxlor 2.3.x (developed against 2.3.13, checked against
+**Version 1.1.1** · Froxlor 2.3.x (developed against 2.3.13, checked against
 2.3.16) · PHP 8.1 or newer · GPL-2.0-or-later
 
 Froxlor arranges resources by type: one list of all domains, one of all email
@@ -158,8 +158,8 @@ down (Postfix and Dovecot serve the panel certificate for all names again).
 Without `--purge` the assignments are kept — whoever uninstalls only
 temporarily does not lose any work. The WordPress backups below
 `/var/backups/froxlor-project-view/` stay; nobody deletes them automatically.
-The subdomains created by the mail package stay too — they belong to the
-customer.
+The subdomains (and main domains of email-only domains) created by the mail
+package stay too — they belong to the customer.
 
 ## Configuration
 
@@ -203,7 +203,7 @@ a new code here as long as the target field is left unchanged.
 
 **List.** All main domains with a URL document root, with customer, target and
 code. Target and code can be changed per row; only changed values are sent to
-Froxlor. The `webmail.`/`mail.` subdomains of the mail package are not listed.
+Froxlor. The `webmail.`/`mail.` subdomains of the mail package (and, for email-only domains, their main domains) are not listed.
 
 **Turn a domain with web hosting into a redirect.** The second list shows main
 domains with a normal document root (no alias domains, no email-only domains).
@@ -313,8 +313,8 @@ subdomain is switched **only once**: whoever turns Let's Encrypt off
 afterwards keeps it that way. On the first run this also applies to all
 existing subdomains. Can be turned off under Settings › Project View.
 
-**Mail package.** For every email domain (not "email only") the cron creates
-four subdomains with Let's Encrypt:
+**Mail package.** For every email domain the cron creates four subdomains
+with Let's Encrypt:
 
 | Subdomain | Purpose |
 |---|---|
@@ -332,6 +332,27 @@ customer deletes one of these subdomains, the cron does not create it again.
 The four subdomains count towards the customer's subdomain quota; if it is
 not enough, the cron rather creates nothing than half a package. "Off"
 creates nothing new but maintains what already exists.
+
+**Domains marked "email only".** Froxlor allows no subdomains below them and
+issues no certificate for them, so mail clients would get the panel's
+certificate for `mail.<domain>`. For these domains the four names are created
+as **main domains of the customer** instead (no www alias, Let's Encrypt on,
+same special settings as above). They count towards the **admin's domain
+quota** (`panel_admins.domains`; a customer has no domain quota of its own),
+four per email-only domain; if it is not enough, nothing is created and the
+row says so. Project View does not list them as projects (not in the
+overview, the redirect lists, "Unassigned" or as assignment targets); the mail
+package box on the email-only domain's page shows their state. Postfix and
+Dovecot get their certificates through SNI like everywhere else. Unlike real
+subdomains they are not reset when the email-only domain is edited, only when
+someone edits them in Froxlor's own form (restored by the next cron run).
+The redirect from `mail.` to webmail needs a URL as document root of a main
+domain, which Froxlor accepts from **2.3.16**; with an older Froxlor nothing
+is created for email-only domains and the rows say so. If you delete the
+email-only domain (or turn off its email, or move it to another customer),
+the four domains are **not** deleted: the next cron run only forgets their
+rows, and they appear as ordinary domains and projects, so you can delete or
+keep them like any other domain.
 
 webmail. and the autoconfiguration need the socket of the PHP-FPM pool in
 which Roundcube runs and the Roundcube directory in the settings. These three
@@ -365,7 +386,7 @@ Here the extension departs from "only new files", in exactly three places:
   same state only after an hour — immediately if you delete
   `/etc/ssl/froxlor-project-view-mail/state.json`.
 - `migrations/remove.php` takes the SNI down again. The created subdomains
-  stay, they belong to the customer.
+  and domains stay, they belong to the customer.
 
 **Froxlor's own mail SNI.** A future Froxlor release may ship per-domain mail
 SNI itself (setting `mail.sni_enabled`, upstream pull request

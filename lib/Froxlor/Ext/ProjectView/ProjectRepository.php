@@ -24,6 +24,17 @@ class ProjectRepository
 	public const REDIRECT_CODES = ['301', '302', '303', '307'];
 
 	/**
+	 * SQL condition (alias `d`): not a main domain the mail package created
+	 * for an "e-mail only" domain (mail., webmail., autoconfig., autodiscover.).
+	 * Those are infrastructure of the e-mail domain, not projects. Only hidden
+	 * while the e-mail domain still exists and belongs to the same customer;
+	 * otherwise the domain is an ordinary one and the admin must see it.
+	 */
+	public const NOT_MAIL_PACKAGE = "NOT EXISTS (SELECT 1 FROM `ext_projectview_mail_package` `pm`
+		JOIN `" . TABLE_PANEL_DOMAINS . "` `pp` ON `pp`.`id` = `pm`.`domainid`
+		WHERE `pm`.`subdomainid` = `d`.`id` AND `pm`.`status` = 'created' AND `pp`.`customerid` = `d`.`customerid`)";
+
+	/**
 	 * Cache for the key figures of all visible projects. Filled once per
 	 * request, so the overview list does not query per row.
 	 */
@@ -64,6 +75,7 @@ class ProjectRepository
 			LEFT JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
 			WHERE `d`.`parentdomainid` = '0'
 			  AND (`c`.`standardsubdomain` IS NULL OR `c`.`standardsubdomain` <> `d`.`id`)
+			  AND " . self::NOT_MAIL_PACKAGE . "
 			" . $scopeSql . "
 			ORDER BY `d`.`domain_ace` ASC
 		");
@@ -80,8 +92,8 @@ class ProjectRepository
 
 	/**
 	 * A single project. Returns null if the domain does not exist, is not a
-	 * main domain, is the customer's standard subdomain (not a project, as in
-	 * listProjects) or lies outside the admin's visibility — the cases are
+	 * main domain, is the customer's standard subdomain or a mail package
+	 * domain (not projects, as in listProjects) or lies outside the admin's visibility — the cases are
 	 * deliberately indistinguishable for the caller.
 	 */
 	public static function getProject(int $domainid): ?array
@@ -97,6 +109,7 @@ class ProjectRepository
 			LEFT JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
 			WHERE `d`.`id` = :id AND `d`.`parentdomainid` = '0'
 			  AND (`c`.`standardsubdomain` IS NULL OR `c`.`standardsubdomain` <> `d`.`id`)
+			  AND " . self::NOT_MAIL_PACKAGE . "
 			" . $scopeSql . "
 		");
 		$row = Database::pexecute_first($stmt, array_merge(['id' => $domainid], $scopeParams));
@@ -164,7 +177,7 @@ class ProjectRepository
 
 	/**
 	 * Main domains that only redirect (documentroot is a URL).
-	 * The redirects of the mail package are subdomains and therefore not listed.
+	 * The redirects of the mail package are not listed (NOT_MAIL_PACKAGE).
 	 * Like listConvertible(): no alias domains, no standard subdomains.
 	 */
 	public static function listRedirects(): array
@@ -197,6 +210,7 @@ class ProjectRepository
 			LEFT JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
 			WHERE `d`.`parentdomainid` = '0' AND `d`.`aliasdomain` IS NULL
 			  AND (`c`.`standardsubdomain` IS NULL OR `c`.`standardsubdomain` <> `d`.`id`)
+			  AND " . self::NOT_MAIL_PACKAGE . "
 			  AND " . $condition . "
 			" . $scopeSql . "
 			ORDER BY `d`.`domain_ace` ASC

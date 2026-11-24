@@ -968,7 +968,7 @@ function pv_mail_package(array $project): ?array
 	$mode = MailPackage::mode();
 	// The same conditions as in MailPackage's domain selection, otherwise
 	// "Not checked yet" would show here forever.
-	if ($mode === 'off' || (int)$project['isemaildomain'] !== 1 || (int)$project['email_only'] === 1
+	if ($mode === 'off' || (int)$project['isemaildomain'] !== 1
 		|| (int)$project['deactivated'] === 1 || !empty($project['aliasdomain'])) {
 		return null;
 	}

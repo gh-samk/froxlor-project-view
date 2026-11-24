@@ -2,6 +2,7 @@
 
 namespace Froxlor\Ext\ProjectView;
 
+use Froxlor\Api\Commands\Domains;
 use Froxlor\Api\Commands\SubDomains;
 use Froxlor\Cron\TaskId;
 use Froxlor\Database\Database;
@@ -21,10 +22,27 @@ use PDO;
  *
  * - mail.         Name for IMAP, POP3 and SMTP. The certificate reaches
  *                 Postfix and Dovecot via SNI (MailSni, which also serves
- *                 the main domain and imap./smtp. subdomains with a certificate of their own). In a browser: redirect to webmail.
+ *                 the main domain and imap./smtp. subdomains with a
+ *                 certificate of their own). In a browser: redirect to
+ *                 webmail.
  * - webmail.      Roundcube from the server's shared installation.
  * - autoconfig.   Thunderbird finds server and ports here.
  * - autodiscover. The same for Outlook.
+ *
+ * Domains marked "email only" are the exception: Froxlor allows no
+ * subdomains below them (and issues no certificate for them), so for those
+ * the four names become main domains of the customer instead, with the same
+ * settings. They count towards the admin's domain quota, not the customer's
+ * subdomain quota, and Project View hides them from its project lists. They
+ * hang on the e-mail only domain only by name and by their row in
+ * ext_projectview_mail_package: deleting that domain deletes nothing here,
+ * the next run drops the row (forgetOrphans) and they show up as ordinary
+ * domains again. The redirect from mail. needs a document root that is a URL
+ * (Froxlor 2.3.16 or newer); older versions create nothing.
+ *
+ * Known gap: if the process dies between Froxlor creating a domain and the
+ * row recording it, the next run finds the name taken and records "Already
+ * existed", and the domain stays visible. Left as is on purpose.
  *
  * Every subdomain is created once. If the customer deletes one, it stays
  * gone; Project View shows that. Whatever already exists under the name is
@@ -89,7 +107,9 @@ class MailPackage
 	 * @param array|null $entry row from ext_projectview_mail_package
 	 * @param array $context mode, system_names, existing (row from panel_domains
 	 *                       or null), socket (bool: socket and paths valid),
-	 *                       apache (bool), le (bool: Let's Encrypt on in Froxlor)
+	 *                       apache (bool), le (bool: Let's Encrypt on in Froxlor),
+	 *                       optional email_only (bool) and url_docroot (bool:
+	 *                       Froxlor accepts a URL as document root of a main domain)
 	 * @return array{action:string, status:string, message:string}
 	 *               action: create | record | maintain | nothing
 	 */
@@ -133,6 +153,13 @@ class MailPackage
 		}
 		if (!$context['le']) {
 			return ['action' => 'record', 'status' => 'skipped', 'message' => Lang::t('Let\'s Encrypt is turned off in Froxlor.')];
+		}
+		// mail. below an e-mail only domain redirects via a URL as document
+		// root; Froxlor before 2.3.16 refuses that. With a valid socket (mail.
+		// is then the redirect) all four kinds are skipped: better nothing than
+		// half a package. Without a socket mail. is an empty page and needs no URL.
+		if (($context['email_only'] ?? false) && $context['socket'] && !($context['url_docroot'] ?? true)) {
+			return ['action' => 'record', 'status' => 'skipped', 'message' => Lang::t('Froxlor is too old: for "email only" domains the mail package needs Froxlor 2.3.16 or newer.')];
 		}
 		if ($context['mode'] !== 'on') {
 			return ['action' => 'record', 'status' => 'planned', 'message' => ''];
@@ -215,6 +242,7 @@ class MailPackage
 		$dns ??= [SubdomainSsl::class, 'dnsPointsHere'];
 		$now ??= time();
 		$counts = ['created' => 0, 'maintained' => 0, 'failed' => 0];
+		self::forgetOrphans();
 		$paths = self::paths();
 		$context = [
 			'mode' => self::mode(),
@@ -222,17 +250,20 @@ class MailPackage
 			'socket' => self::pathsValid($paths),
 			'apache' => Settings::Get('system.webserver') === 'apache2',
 			'le' => (string)Settings::Get('system.leenabled') === '1',
+			'url_docroot' => version_compare(Froxlor::VERSION, '2.3.16', '>='),
 		];
 		$entries = self::entries();
-		// Free subdomains per customer, counted down during the run: if a
-		// customer has several mail domains, the first one uses up what the
-		// second would still see.
+		// Free quota per pool (customer subdomains, or the admin's domains for
+		// e-mail only domains), counted down during the run: if a customer has
+		// several mail domains, the first one uses up what the second would
+		// still see.
 		$free = [];
 
 		foreach (self::domains() as $domain) {
-			$customer = (int)$domain['customerid'];
-			$free[$customer] ??= (int)$domain['subdomains'] === -1 ? PHP_INT_MAX : (int)$domain['subdomains'] - (int)$domain['subdomains_used'];
+			$pool = $domain['pool'];
+			$free[$pool] ??= (int)$domain['quota'] === -1 ? PHP_INT_MAX : (int)$domain['quota'] - (int)$domain['quota_used'];
 
+			$domainContext = ['email_only' => (int)$domain['email_only'] === 1] + $context;
 			$plans = [];
 			foreach (array_keys(self::KINDS) as $kind) {
 				$name = $kind . '.' . $domain['domain'];
@@ -241,22 +272,24 @@ class MailPackage
 				$plans[$kind] = [$name, $entry, $existing];
 			}
 
-			// Better nothing than half a package: if the customer's subdomain
-			// quota is not enough for everything that is missing, nothing is
-			// created. Froxlor checks the quota for admins too. Counted before
-			// any DNS lookup, as if DNS pointed here everywhere — otherwise a
-			// customer without quota would trigger lookups every minute.
+			// Better nothing than half a package: if the quota is not enough
+			// for everything that is missing, nothing is created. Froxlor
+			// checks the quota for admins too. Counted before any DNS lookup,
+			// as if DNS pointed here everywhere — otherwise a customer without
+			// quota would trigger lookups every minute.
 			$possible = 0;
 			foreach ($plans as $kind => [$name, $entry, $existing]) {
-				$probe = self::plan($domain['domain'], $kind, $entry, ['existing' => $existing] + $context, static fn() => true, $now);
+				$probe = self::plan($domain['domain'], $kind, $entry, ['existing' => $existing] + $domainContext, static fn() => true, $now);
 				$possible += $probe['action'] === 'create' ? 1 : 0;
 			}
-			$tooFew = $possible > $free[$customer];
+			$tooFew = $possible > $free[$pool];
 
 			foreach ($plans as $kind => [$name, $entry, $existing]) {
-				$plan = self::plan($domain['domain'], $kind, $entry, ['existing' => $existing] + $context, static fn() => $tooFew || $dns($name, (int)$domain['id']), $now);
+				$plan = self::plan($domain['domain'], $kind, $entry, ['existing' => $existing] + $domainContext, static fn() => $tooFew || $dns($name, (int)$domain['id']), $now);
 				if ($tooFew && $plan['action'] === 'create') {
-					$plan = ['action' => 'record', 'status' => 'skipped', 'message' => Lang::t('The customer\'s subdomain quota is not enough (%d free, %d needed).', max(0, $free[$customer]), $possible)];
+					$plan = ['action' => 'record', 'status' => 'skipped', 'message' => (int)$domain['email_only'] === 1
+						? Lang::t('The domain quota is not enough (%d free, %d needed).', max(0, $free[$pool]), $possible)
+						: Lang::t('The customer\'s subdomain quota is not enough (%d free, %d needed).', max(0, $free[$pool]), $possible)];
 				}
 				$plans[$kind] = [$plan, $entry, $existing];
 			}
@@ -271,7 +304,7 @@ class MailPackage
 							// taking the subdomain for someone else's.
 							self::record((int)$domain['id'], $kind, $id, 'created', '', $now, $entry);
 							$entry = ['status' => 'created', 'subdomainid' => $id] + ($entry ?? ['first_attempt_at' => $now]);
-							$free[$customer]--;
+							$free[$pool]--;
 							$counts['created']++;
 							self::withoutWwwAlias($id);
 							if (in_array($kind, self::WITH_PHP, true)) {
@@ -304,7 +337,7 @@ class MailPackage
 	}
 
 	/**
-	 * Restores the Apache lines of a main domain's subdomains right away.
+	 * Restores the Apache lines of a main domain's mail package subdomains right away.
 	 * Froxlor's Domains::update overwrites the special settings and PHP
 	 * switches of all subdomains on every edit of the main domain; Project
 	 * View calls this after its own changes, changes made in Froxlor's form
@@ -386,19 +419,24 @@ class MailPackage
 	}
 
 	/**
-	 * E-mail domains that get a mail package. "E-mail only" is excluded
-	 * because Froxlor allows no subdomains below it; the customer's standard
-	 * subdomain lives below the hostname and is not included.
+	 * E-mail domains that get a mail package, with the quota that pays for
+	 * it: the customer's subdomain quota, or for "e-mail only" domains (no
+	 * subdomains possible below them, so the names become main domains) the
+	 * admin's domain quota. "pool" says who shares that quota. The customer's
+	 * standard subdomain lives below the hostname and is not included.
 	 */
 	private static function domains(): array
 	{
 		$stmt = Database::query("
-			SELECT `d`.`id`, `d`.`domain`, `d`.`customerid`, `c`.`subdomains`, `c`.`subdomains_used`
+			SELECT `d`.`id`, `d`.`domain`, `d`.`customerid`, `d`.`email_only`,
+			       IF(`d`.`email_only` = 1, `a`.`domains`, `c`.`subdomains`) AS `quota`,
+			       IF(`d`.`email_only` = 1, `a`.`domains_used`, `c`.`subdomains_used`) AS `quota_used`,
+			       IF(`d`.`email_only` = 1, CONCAT('a', `c`.`adminid`), CONCAT('c', `c`.`customerid`)) AS `pool`
 			FROM `" . TABLE_PANEL_DOMAINS . "` `d`
 			JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
+			JOIN `" . TABLE_PANEL_ADMINS . "` `a` ON `a`.`adminid` = `c`.`adminid`
 			WHERE `d`.`parentdomainid` = 0
 			  AND `d`.`isemaildomain` = 1
-			  AND `d`.`email_only` = 0
 			  AND `d`.`deactivated` = 0
 			  AND `d`.`aliasdomain` IS NULL
 			  AND `d`.`id` <> `c`.`standardsubdomain`
@@ -407,6 +445,27 @@ class MailPackage
 		");
 
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
+	}
+
+	/**
+	 * Drops the rows of main domains the package created whose e-mail domain
+	 * is gone, is no e-mail domain any more or now belongs to another
+	 * customer. Rows of subdomains and valid rows stay. The domains themselves
+	 * are never deleted: without the row they are ordinary domains again,
+	 * visible to the admin. Until this runs (cron, every minute) the project
+	 * lists only check that the e-mail domain exists and has the same customer
+	 * (ProjectRepository::NOT_MAIL_PACKAGE); "no longer an e-mail domain"
+	 * takes effect here.
+	 */
+	private static function forgetOrphans(): void
+	{
+		Database::query("
+			DELETE `m` FROM `ext_projectview_mail_package` `m`
+			JOIN `" . TABLE_PANEL_DOMAINS . "` `d` ON `d`.`id` = `m`.`subdomainid` AND `d`.`parentdomainid` = 0
+			LEFT JOIN `" . TABLE_PANEL_DOMAINS . "` `p` ON `p`.`id` = `m`.`domainid`
+			WHERE `m`.`status` = 'created'
+			  AND (`p`.`id` IS NULL OR `p`.`isemaildomain` = 0 OR `p`.`customerid` <> `d`.`customerid`)
+		");
 	}
 
 	private static function entries(): array
@@ -435,8 +494,6 @@ class MailPackage
 	{
 		$params = [
 			'customerid' => (int)$domain['customerid'],
-			'subdomain' => $kind,
-			'domain' => $domain['domain'],
 			'sslenabled' => 1,
 			'letsencrypt' => 1,
 			'ssl_redirect' => 1,
@@ -445,14 +502,29 @@ class MailPackage
 		// Otherwise its own empty directory: without a path Froxlor would take
 		// the customer's whole web directory, and that must never appear under
 		// these names, not even if the Apache lines go missing at some point.
-		if ($kind === 'mail' && self::pathsValid($paths)) {
-			$params['url'] = 'https://webmail.' . $domain['domain'] . '/';
-		} else {
-			$params['path'] = $kind . '.' . $domain['domain'];
-		}
+		$redirect = $kind === 'mail' && self::pathsValid($paths);
+		$target = $redirect ? 'https://webmail.' . $domain['domain'] . '/' : $kind . '.' . $domain['domain'];
+		$context = AdminContext::forCustomer((int)$domain['customerid']);
+		// With "use the domain name as document root" Froxlor adds the name
+		// itself to a relative path; an empty path then gives <customer web>/<domain>.
+		$mainTarget = !$redirect && (string)Settings::Get('system.documentroot_use_default_value') === '1' ? '' : $target;
 
-		$response = SubDomains::getLocal(AdminContext::forCustomer((int)$domain['customerid']), $params)->add();
-		$id = (int)(json_decode($response, true)['data']['id'] ?? 0);
+		if ((int)$domain['email_only'] === 1) {
+			// No subdomains below an "e-mail only" domain: a main domain of its own,
+			// without www. and wildcard (selectserveralias 2 = none).
+			$command = Domains::getLocal($context, $params + [
+				'domain' => $kind . '.' . $domain['domain'],
+				'documentroot' => $mainTarget,
+				'selectserveralias' => 2,
+			]);
+		} else {
+			$command = SubDomains::getLocal($context, $params + [
+				'subdomain' => $kind,
+				'domain' => $domain['domain'],
+				($redirect ? 'url' : 'path') => $target,
+			]);
+		}
+		$id = (int)(json_decode($command->add(), true)['data']['id'] ?? 0);
 		if ($id <= 0) {
 			throw new \RuntimeException(Lang::t('Froxlor returned no ID for %s.', $kind . '.' . $domain['domain']));
 		}
@@ -468,7 +540,10 @@ class MailPackage
 		// issuance can fail. Directly instead of via SubDomains::update: that
 		// would turn ssl_redirect=2 ("only once the certificate exists") into 1
 		// immediately and redirect to HTTPS without a certificate.
-		$stmt = Database::prepare("UPDATE `" . TABLE_PANEL_DOMAINS . "` SET `wwwserveralias` = 0, `iswildcarddomain` = 0 WHERE `id` = :id");
+		// isbinddomain: Domains::add (e-mail only domains) switches on a DNS
+		// zone of its own for the name if the admin may not change server
+		// settings; the name belongs to the customer's zone.
+		$stmt = Database::prepare("UPDATE `" . TABLE_PANEL_DOMAINS . "` SET `wwwserveralias` = 0, `iswildcarddomain` = 0, `isbinddomain` = 0 WHERE `id` = :id");
 		Database::pexecute($stmt, ['id' => $id]);
 		Cronjob::inserttask(TaskId::REBUILD_VHOST);
 	}

@@ -348,13 +348,15 @@ class ResourceMapper
 		// WordpressScanner::scanAll(): the customer's standard subdomain is not
 		// a project. Without this exclusion it would be offered as an
 		// assignment target — and because its name starts with the login name,
-		// it would even be the preselected suggestion for databases.
+		// it would even be the preselected suggestion for databases. The same
+		// goes for the main domains of the mail package.
 		$stmt = Database::prepare("
 			SELECT `d`.`id`, `d`.`domain`, `d`.`domain_ace`, `d`.`documentroot`
 			FROM `" . TABLE_PANEL_DOMAINS . "` `d`
 			LEFT JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
 			WHERE `d`.`customerid` = :cid AND `d`.`parentdomainid` = '0'
 			  AND (`c`.`standardsubdomain` IS NULL OR `c`.`standardsubdomain` <> `d`.`id`)
+			  AND " . ProjectRepository::NOT_MAIL_PACKAGE . "
 			ORDER BY `d`.`domain_ace` ASC
 		");
 		Database::pexecute($stmt, ['cid' => $customerid]);

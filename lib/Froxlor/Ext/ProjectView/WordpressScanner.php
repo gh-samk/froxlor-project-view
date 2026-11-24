@@ -68,6 +68,7 @@ class WordpressScanner
 			LEFT JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
 			WHERE `d`.`parentdomainid` = '0' AND `d`.`documentroot` <> ''
 			  AND (`c`.`standardsubdomain` IS NULL OR `c`.`standardsubdomain` <> `d`.`id`)
+			  AND " . ProjectRepository::NOT_MAIL_PACKAGE . "
 		");
 		Database::pexecute($stmt);
 
