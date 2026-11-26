@@ -448,4 +448,12 @@ return [
 	'The target must be a complete address starting with http:// or https://, without spaces, quotes or characters like @ $ ; % { } < >.' => 'Das Ziel muss eine vollständige Adresse mit http:// oder https:// sein, ohne Leerzeichen, Anführungszeichen oder Zeichen wie @ $ ; % { } < >.',
 	'Redirect created, but its ID could not be read, so the redirect code was not set. Please check it in the list.' => 'Weiterleitung angelegt, aber ihre ID ließ sich nicht lesen, daher wurde der Weiterleitungscode nicht gesetzt. Bitte in der Liste prüfen.',
 	'This customer is not available.' => 'Dieser Kunde ist nicht verfügbar.',
+	'Assignment is automatic again. The next daily scan recalculates it from the path.' => 'Zuordnung wieder automatisch. Beim nächsten täglichen Scan wird sie nach dem Pfad neu berechnet.',
+	'Unknown project or another customer.' => 'Unbekanntes Projekt oder anderer Kunde.',
+	'The installation is not inside the customer directory and cannot be assigned.' => 'Die Installation liegt nicht im Verzeichnis des Kunden und lässt sich nicht zuordnen.',
+	'This path is already registered under the target project. Nothing was changed.' => 'Unter dem Zielprojekt ist dieser Pfad bereits eingetragen. Es wurde nichts geändert.',
+	'WordPress installation assigned to project %s.' => 'WordPress-Installation dem Projekt %s zugeordnet.',
+	'manually assigned' => 'manuell zugeordnet',
+	'automatic' => 'automatisch',
+	'With "automatic" the daily scan assigns by path' => 'Bei „automatisch“ ordnet der tägliche Scan nach dem Pfad zu',
 ];

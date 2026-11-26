@@ -476,7 +476,7 @@ class ProjectRepository
 			SELECT `id`, `domainid`, `path`, `version`, `last_seen`, `siteurl`, `admin_users`,
 			       `update_core`, `update_plugins`, `update_themes`, `update_details`, `checked_at`,
 			       `login_installed`, `integrity_checked_at`, `integrity_modified`, `integrity_added`,
-			       `integrity_missing`, `integrity_uploads`, `integrity_details`
+			       `integrity_missing`, `integrity_uploads`, `integrity_details`, `manual`
 			FROM `ext_projectview_wp_installs`
 			WHERE `domainid` = :id
 			ORDER BY `path` ASC

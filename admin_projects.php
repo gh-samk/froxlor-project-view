@@ -29,6 +29,7 @@ use Froxlor\Api\Commands\Mysqls;
 use Froxlor\Api\Commands\SubDomains;
 use Froxlor\CurrentUser;
 use Froxlor\Cron\TaskId;
+use Froxlor\Database\Database;
 use Froxlor\Domain\Domain;
 use Froxlor\Ext\ProjectView\Html;
 use Froxlor\Ext\ProjectView\Lang;
@@ -849,6 +850,44 @@ if ($page == 'overview' || $page == 'projects') {
 				Response::redirectTo($filename, $backToProject);
 				break;
 
+			case 'wp_assign':
+				$wp = pv_find(ProjectRepository::getWordpress($id), (int)Request::post('installid'), Lang::t('This WordPress installation'));
+				$target = (string)Request::post('target');
+				if ($target === 'auto') {
+					$stmt = Database::prepare("UPDATE `ext_projectview_wp_installs` SET `manual` = 0 WHERE `id` = :iid AND `domainid` = :did");
+					Database::pexecute($stmt, ['iid' => (int)$wp['id'], 'did' => $id]);
+					$message = Lang::t('Assignment is automatic again. The next daily scan recalculates it from the path.');
+				} else {
+					// Target must be in the admin's project list and belong to the same customer.
+					$targetProject = null;
+					foreach (ProjectRepository::listProjects() as $candidate) {
+						if ((int)$candidate['id'] === (int)$target) {
+							$targetProject = $candidate;
+						}
+					}
+					if ($targetProject === null || (int)$targetProject['customerid'] !== $customerid) {
+						pv_error(Lang::t('Unknown project or another customer.'));
+					}
+					// As in the scan: a pin only counts below the customer directory.
+					$root = rtrim((string)$project['customer_docroot'], '/') . '/';
+					if ($root === '/' || !str_starts_with(rtrim((string)$wp['path'], '/') . '/', $root)) {
+						pv_error(Lang::t('The installation is not inside the customer directory and cannot be assigned.'));
+					}
+					$stmt = Database::prepare("SELECT 1 FROM `ext_projectview_wp_installs` WHERE `domainid` = :target AND BINARY `path` = :path");
+					if ((int)$targetProject['id'] !== $id && Database::pexecute_first($stmt, ['target' => (int)$targetProject['id'], 'path' => (string)$wp['path']])) {
+						pv_flash(Lang::t('This path is already registered under the target project. Nothing was changed.'), 'warning');
+						Response::redirectTo($filename, $backToProject);
+						break;
+					}
+					$stmt = Database::prepare("UPDATE `ext_projectview_wp_installs` SET `domainid` = :target, `manual` = 1 WHERE `id` = :iid AND `domainid` = :did");
+					Database::pexecute($stmt, ['target' => (int)$targetProject['id'], 'iid' => (int)$wp['id'], 'did' => $id]);
+					$log->logAction(FroxlorLogger::ADM_ACTION, LOG_NOTICE, sprintf('Project View: assigned WordPress %s to project #%d', str_replace(["\r", "\n"], ' ', (string)$wp['path']), (int)$targetProject['id']));
+					$message = Lang::t('WordPress installation assigned to project %s.', $targetProject['domain']);
+				}
+				pv_flash($message);
+				Response::redirectTo($filename, $backToProject);
+				break;
+
 			case 'wp_login':
 				$wp = pv_find(ProjectRepository::getWordpress($id), (int)Request::post('installid'), Lang::t('This WordPress installation'));
 				$user = (string)Request::post('user');
@@ -938,6 +977,10 @@ if ($page == 'overview' || $page == 'projects') {
 		'ftps' => ProjectRepository::getFtps($id),
 		'wordpress' => ProjectRepository::getWordpress($id),
 		'wp_types' => WordpressJobs::TYPES,
+		'customer_projects' => array_values(array_filter(
+			ProjectRepository::listProjects(),
+			static fn(array $p): bool => (int)$p['customerid'] === (int)$project['customerid']
+		)),
 		'storage' => pv_storage($id),
 		'backup' => pv_backup($project),
 		'flash' => is_array($flash) ? $flash : null,

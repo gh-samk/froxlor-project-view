@@ -94,34 +94,69 @@ class WordpressScanner
 			$domains[] = ['id' => (int)$row['id'], 'docroot' => $docroot . '/'];
 		}
 
-		// Assign each installation found to exactly one project: the one with
-		// the longest matching document root. Projects may be nested; then the
-		// find belongs to the more specific one.
-		$best = [];
+		// Subdomains with their own directory are additional search roots; finds
+		// are booked on their main domain. Redirects (URL instead of path) and
+		// subdomains of excluded domains (standard subdomain, mail package) drop
+		// out because their main domain is not in $domains.
+		$projects = array_column($domains, 'id', 'id');
+		$stmt = Database::prepare("
+			SELECT `d`.`parentdomainid`, `d`.`documentroot`, `c`.`documentroot` AS `customer_docroot`
+			FROM `" . TABLE_PANEL_DOMAINS . "` `d`
+			LEFT JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
+			WHERE `d`.`parentdomainid` <> '0' AND `d`.`documentroot` LIKE '/%'
+			ORDER BY `d`.`id` ASC
+		");
+		Database::pexecute($stmt);
+		$candidates = $domains;
+		while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+			if (!isset($projects[(int)$row['parentdomainid']])) {
+				continue;
+			}
+			$docroot = rtrim((string)$row['documentroot'], '/');
+			$customerRoot = rtrim((string)($row['customer_docroot'] ?? ''), '/');
+			$base = ($customerRoot !== '' && str_starts_with($docroot . '/', $customerRoot . '/'))
+				? $customerRoot
+				: dirname($docroot);
+			if (!self::pathHasNoSymlinks($base, $docroot)) {
+				$skipped++;
+				continue;
+			}
+			$candidates[] = ['id' => (int)$row['parentdomainid'], 'docroot' => $docroot . '/'];
+		}
+
+		$found = [];
 		$capped = 0;
-		foreach ($domains as $domain) {
-			$installs = self::findInstalls($domain['docroot']);
+		foreach ($candidates as $candidate) {
+			$installs = self::findInstalls($candidate['docroot']);
 			if (count($installs) > self::MAX_INSTALLS_PER_PROJECT) {
-				// Bounded work and table size per project, however many copies a
-				// customer creates; the first ones by path are kept.
+				// Bounded work and table size per search root, however many copies
+				// a customer creates; the first ones by path are kept.
 				ksort($installs);
 				$installs = array_slice($installs, 0, self::MAX_INSTALLS_PER_PROJECT, true);
 				$capped++;
 			}
-			foreach ($installs as $path => $version) {
-				$normalized = rtrim($path, '/') . '/';
-				if (!str_starts_with($normalized, $domain['docroot'])) {
-					continue;
-				}
-				$depth = strlen($domain['docroot']);
-				if (!isset($best[$path]) || $depth > $best[$path]['depth']) {
-					$best[$path] = ['id' => $domain['id'], 'version' => $version, 'depth' => $depth];
-				}
-			}
+			$found += $installs;
+		}
+		// The column path holds 255 characters: longer paths cannot be stored and
+		// would never match a pin when truncated (the pin would be lost silently).
+		$found = array_filter($found, static fn($v, $path) => strlen($path) <= 255, ARRAY_FILTER_USE_BOTH);
+
+		$pins = [];
+		$stmt = Database::prepare("
+			SELECT `i`.`path`, `i`.`domainid`, `c`.`documentroot` AS `root`
+			FROM `ext_projectview_wp_installs` `i`
+			JOIN `" . TABLE_PANEL_DOMAINS . "` `d` ON `d`.`id` = `i`.`domainid`
+			JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` ON `c`.`customerid` = `d`.`customerid`
+			WHERE `i`.`manual` = 1
+		");
+		Database::pexecute($stmt);
+		while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+			$pins[$row['path']] = ['id' => (int)$row['domainid'], 'root' => (string)$row['root']];
 		}
 
+		$best = self::assign($candidates, $found, $pins);
 		foreach ($best as $path => $match) {
-			self::record($match['id'], $path, $match['version'], $runStarted);
+			self::record($match['id'], $path, $match['version'], $runStarted, $match['manual']);
 		}
 
 		return [
@@ -131,6 +166,44 @@ class WordpressScanner
 			'capped' => $capped,
 			'skipped' => $skipped,
 		];
+	}
+
+	/**
+	 * Assigns each find to one project: the candidate with the longest matching
+	 * document root, on a tie the one named first. Manually assigned paths keep
+	 * their project; the automatic assignment never applies to them.
+	 *
+	 * @param array<int,array{id:int,docroot:string}> $candidates docroot with trailing slash, id = project
+	 * @param array<string,string|null> $found path => version
+	 * @param array<string,array{id:int,root:string}> $pins path => project and customer directory
+	 * @return array<string,array{id:int,version:?string,manual:bool}>
+	 */
+	public static function assign(array $candidates, array $found, array $pins): array
+	{
+		$best = [];
+		$ids = array_column($candidates, 'id', 'id');
+		foreach ($found as $path => $version) {
+			// A pin only counts for an existing project whose customer directory
+			// contains the path; otherwise the automatic assignment applies (and
+			// record() releases the pin).
+			$pin = $pins[$path] ?? null;
+			$root = $pin ? rtrim($pin['root'], '/') . '/' : '';
+			if ($pin && isset($ids[$pin['id']]) && $root !== '/' && str_starts_with(rtrim($path, '/') . '/', $root)) {
+				$best[$path] = ['id' => $pin['id'], 'version' => $version, 'manual' => true];
+				continue;
+			}
+			$normalized = rtrim($path, '/') . '/';
+			$depth = -1;
+			foreach ($candidates as $candidate) {
+				$length = strlen($candidate['docroot']);
+				if ($length > $depth && str_starts_with($normalized, $candidate['docroot'])) {
+					$depth = $length;
+					$best[$path] = ['id' => $candidate['id'], 'version' => $version, 'manual' => false];
+				}
+			}
+		}
+
+		return $best;
 	}
 
 	/**
@@ -263,19 +336,35 @@ class WordpressScanner
 		return null;
 	}
 
-	private static function record(int $domainid, string $path, ?string $version, int $seenAt): void
+	private static function record(int $domainid, string $path, ?string $version, int $seenAt, bool $pin): void
 	{
+		// An existing row with this path (also under another project) is moved
+		// instead of created anew: autologin, jobs and check data hang on its id.
+		// rowCount() is unreliable for UPDATE, hence the lookup first.
+		$stmt = Database::prepare("SELECT `id`, `domainid` FROM `ext_projectview_wp_installs` WHERE BINARY `path` = :path");
+		Database::pexecute($stmt, ['path' => $path]);
+		$existing = null;
+		while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+			if ($existing === null || (int)$row['domainid'] === $domainid) {
+				$existing = $row;
+			}
+		}
+
+		if ($existing === null) {
+			$stmt = Database::prepare("
+				INSERT INTO `ext_projectview_wp_installs` (`domainid`, `path`, `version`, `last_seen`)
+				VALUES (:domainid, :path, :version, :seen)
+				ON DUPLICATE KEY UPDATE `version` = VALUES(`version`), `last_seen` = VALUES(`last_seen`)
+			");
+			Database::pexecute($stmt, ['domainid' => $domainid, 'path' => $path, 'version' => $version, 'seen' => $seenAt]);
+			return;
+		}
+
 		$stmt = Database::prepare("
-			INSERT INTO `ext_projectview_wp_installs` (`domainid`, `path`, `version`, `last_seen`)
-			VALUES (:domainid, :path, :version, :seen)
-			ON DUPLICATE KEY UPDATE `version` = VALUES(`version`), `last_seen` = VALUES(`last_seen`)
+			UPDATE `ext_projectview_wp_installs`
+			SET `domainid` = :domainid, `version` = :version, `last_seen` = :seen, `manual` = :pin WHERE `id` = :id
 		");
-		Database::pexecute($stmt, [
-			'domainid' => $domainid,
-			'path' => substr($path, 0, 255),
-			'version' => $version,
-			'seen' => $seenAt,
-		]);
+		Database::pexecute($stmt, ['domainid' => $domainid, 'version' => $version, 'seen' => $seenAt, 'pin' => $pin ? 1 : 0, 'id' => (int)$existing['id']]);
 	}
 
 	/**

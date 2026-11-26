@@ -278,7 +278,23 @@
 									{% else %}
 										<span class="badge text-bg-secondary">{{ pv_t('Version unknown') }}</span>
 									{% endif %}
-									<div class="small text-body-secondary mt-1 text-break"><code>{{ wp.path }}</code></div>
+									<div class="small text-body-secondary mt-1 text-break"><code>{{ wp.path }}</code>
+										{% if wp.manual %}<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle fw-normal ms-1">{{ pv_t('manually assigned') }}</span>{% endif %}</div>
+									{% if customer_projects|length > 1 or wp.manual %}
+										<form method="post" class="d-flex align-items-center gap-1 mt-1">
+											{{ k.form_header(csrf_token, project.id, 'wp_assign') }}
+											<input type="hidden" name="installid" value="{{ wp.id }}">
+											<label class="small text-body-secondary" for="wptarget-{{ wp.id }}">{{ pv_t('Project') }}</label>
+											<select class="form-select form-select-sm w-auto" id="wptarget-{{ wp.id }}" name="target"
+											        title="{{ pv_t('With "automatic" the daily scan assigns by path') }}">
+												<option value="auto"{% if not wp.manual %} selected{% endif %}>{{ pv_t('automatic') }}</option>
+												{% for cp in customer_projects %}
+													<option value="{{ cp.id }}"{% if wp.manual and cp.id == project.id %} selected{% endif %}>{{ cp.domain_ace ?: cp.domain }}</option>
+												{% endfor %}
+											</select>
+											<button type="submit" class="btn btn-sm btn-outline-secondary">{{ pv_t('Save') }}</button>
+										</form>
+									{% endif %}
 									{% if wp.checked_at %}
 										<div class="d-flex flex-wrap align-items-center gap-1 mt-2">
 											{% if wp.update_core %}
